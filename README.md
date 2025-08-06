@@ -4,6 +4,12 @@ Nowoczesna aplikacja do automatycznej korekty tekstu z wykorzystaniem AI. Aplika
 
 ![Build Status](https://github.com/jarx88/PoprawiaczTekstuPy/workflows/Build%20Windows%20EXE/badge.svg)
 
+## 📸 Zrzut ekranu
+
+![Aplikacja PoprawiaczTekstuPy](screenshots/app-screenshot.png)
+
+*Interfejs aplikacji z 4 panelami AI, animacjami i kolorowymi rezultatami*
+
 ## ✨ Funkcje
 
 - 🎨 **Nowoczesny interfejs** - CustomTkinter z 4-panelowym layoutem
