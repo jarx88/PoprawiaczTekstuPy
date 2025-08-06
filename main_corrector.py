@@ -104,6 +104,17 @@ class MultiAPICorrector(ctk.CTk):
     def __init__(self):
         super().__init__()
         
+        # Ustaw ikonę okna
+        try:
+            icon_path = os.path.join(get_assets_dir_path(), "icon.ico")
+            if os.path.exists(icon_path):
+                self.iconbitmap(icon_path)
+                logging.info(f"Ustawiono ikonę okna: {icon_path}")
+            else:
+                logging.warning(f"Ikona nie znaleziona: {icon_path}")
+        except Exception as e:
+            logging.error(f"Błąd ustawiania ikony okna: {e}")
+        
         # Zmienne do trackingu monitora
         self.last_screen_width = 0
         self.last_screen_height = 0
@@ -875,6 +886,14 @@ class SettingsWindow(ctk.CTkToplevel):
         super().__init__(parent)
         self.parent = parent
         
+        # Ustaw ikonę okna Settings
+        try:
+            icon_path = os.path.join(get_assets_dir_path(), "icon.ico")
+            if os.path.exists(icon_path):
+                self.iconbitmap(icon_path)
+        except Exception as e:
+            logging.debug(f"Błąd ustawiania ikony okna Settings: {e}")
+        
         self.title("Ustawienia API")
         
         # Oblicz rozmiar względem głównego okna
@@ -1061,10 +1080,33 @@ class SettingsWindow(ctk.CTkToplevel):
         
         # Run in thread to avoid blocking UI
         def run_async():
+            loop = None
             try:
-                asyncio.run(load_models())
+                # Create new event loop for this thread
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(load_models())
             except Exception as e:
                 logging.error(f"Error loading models: {e}")
+            finally:
+                # Clean up event loop properly
+                if loop and not loop.is_closed():
+                    try:
+                        # Cancel pending tasks
+                        pending = asyncio.all_tasks(loop)
+                        for task in pending:
+                            task.cancel()
+                        # Wait for cancelled tasks if any
+                        if pending:
+                            loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+                        loop.close()
+                    except Exception as e:
+                        logging.debug(f"Error cleaning up event loop: {e}")
+                # Clear the event loop from thread
+                try:
+                    asyncio.set_event_loop(None)
+                except Exception:
+                    pass
         
         threading.Thread(target=run_async, daemon=True).start()
     
@@ -1085,11 +1127,34 @@ class SettingsWindow(ctk.CTkToplevel):
                 # Re-enable button
                 self.after(0, lambda: self.refresh_buttons[provider].configure(text="🔄", state="normal"))
             
+            loop = None
             try:
-                asyncio.run(refresh())
+                # Create new event loop for this thread
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(refresh())
             except Exception as e:
                 logging.error(f"Error refreshing models for {provider}: {e}")
                 self.after(0, lambda: self.refresh_buttons[provider].configure(text="❌", state="normal"))
+            finally:
+                # Clean up event loop properly
+                if loop and not loop.is_closed():
+                    try:
+                        # Cancel pending tasks
+                        pending = asyncio.all_tasks(loop)
+                        for task in pending:
+                            task.cancel()
+                        # Wait for cancelled tasks if any
+                        if pending:
+                            loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+                        loop.close()
+                    except Exception as e:
+                        logging.debug(f"Error cleaning up event loop: {e}")
+                # Clear the event loop from thread
+                try:
+                    asyncio.set_event_loop(None)
+                except Exception:
+                    pass
         
         threading.Thread(target=run_refresh, daemon=True).start()
     
@@ -1170,13 +1235,24 @@ def create_tray_icon(app):
     global tray_icon
     
     try:
-        # Load icon
+        # Load icon with better error handling
         icon_path = os.path.join(get_assets_dir_path(), "icon.ico")
+        logging.info(f"Próba załadowania ikony tray z: {icon_path}")
+        
         if os.path.exists(icon_path):
-            image = Image.open(icon_path)
+            try:
+                image = Image.open(icon_path)
+                # Convert to appropriate size for tray (typically 16x16 or 32x32)
+                image = image.resize((32, 32), Image.Resampling.LANCZOS)
+                logging.info("Pomyślnie załadowano ikonę tray z pliku")
+            except Exception as icon_error:
+                logging.error(f"Błąd ładowania ikony {icon_path}: {icon_error}")
+                # Fallback - create simple icon with app-like appearance
+                image = Image.new('RGBA', (32, 32), color=(16, 163, 127, 255))  # Green with alpha
         else:
-            # Fallback - create simple icon
-            image = Image.new('RGB', (64, 64), color='#10a37f')
+            logging.warning(f"Plik ikony nie istnieje: {icon_path}")
+            # Fallback - create simple icon with app-like appearance
+            image = Image.new('RGBA', (32, 32), color=(16, 163, 127, 255))  # Green with alpha
         
         # Check autostart status
         def toggle_autostart():

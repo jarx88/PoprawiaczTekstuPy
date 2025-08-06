@@ -7,7 +7,7 @@ from httpx import HTTPError, TimeoutException
 from utils.logger import log_api_error, log_connection_error, log_timeout_error, logger
 # PyQt6 removed - using CustomTkinter GUI now
 from gui.prompts import get_system_prompt
-from .base_client import DEFAULT_TIMEOUT, QUICK_TIMEOUT, CONNECTION_TIMEOUT, DEFAULT_RETRIES, APITimeoutError
+from .base_client import DEFAULT_TIMEOUT, QUICK_TIMEOUT, CONNECTION_TIMEOUT, DEFAULT_RETRIES, APITimeoutError, DEEPSEEK_TIMEOUT
 
 DEEPSEEK_API_ENDPOINT = "https://api.deepseek.com/chat/completions" # Standardowy endpoint
 
@@ -57,13 +57,13 @@ def correct_text_deepseek(api_key, model, text_to_correct, instruction_prompt, s
     }
 
     try:
-        # Usprawniony klient z lepszymi timeoutami
+        # Usprawniony klient z dłuższymi timeoutami dla DeepSeek
         with httpx.Client(
             timeout=httpx.Timeout(
-                connect=CONNECTION_TIMEOUT,  # 5s na połączenie
-                read=DEFAULT_TIMEOUT,        # 15s na odczyt
-                write=CONNECTION_TIMEOUT,    # 5s na zapis
-                pool=CONNECTION_TIMEOUT      # 5s na pool
+                connect=CONNECTION_TIMEOUT,  # 8s na połączenie
+                read=DEEPSEEK_TIMEOUT,       # 35s na odczyt - zwiększone dla DeepSeek
+                write=CONNECTION_TIMEOUT,    # 8s na zapis
+                pool=CONNECTION_TIMEOUT      # 8s na pool
             )
         ) as client:
             response = client.post(DEEPSEEK_API_ENDPOINT, headers=headers, json=payload)
@@ -87,7 +87,7 @@ def correct_text_deepseek(api_key, model, text_to_correct, instruction_prompt, s
 
     except (httpx.TimeoutException, httpx.ReadTimeout, httpx.ConnectTimeout) as e:
         logger.error(f"Timeout DeepSeek API: {e}", exc_info=True)
-        return f"Błąd: DeepSeek API nie odpowiada (timeout {DEFAULT_TIMEOUT}s). Spróbuj ponownie."
+        return f"Błąd: DeepSeek API nie odpowiada (timeout {DEEPSEEK_TIMEOUT}s). Spróbuj ponownie."
     except (HTTPError, TimeoutException, httpx.ConnectError) as e:
         if handle_api_error(e):
             return "Błąd połączenia z API. Sprawdź komunikat błędu."

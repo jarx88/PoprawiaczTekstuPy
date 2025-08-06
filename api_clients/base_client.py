@@ -12,10 +12,11 @@ class APIResponseError(Exception):
 class APITimeoutError(Exception):
     pass
 
-# Zmniejszony timeout dla lepszego UX
-DEFAULT_TIMEOUT = 15  # sekundy - zmniejszone z 60 na 15
-QUICK_TIMEOUT = 8     # sekundy - dla szybszych odpowiedzi
-CONNECTION_TIMEOUT = 5  # sekundy - dla nawiązania połączenia
+# Zwiększone timeouty dla DeepSeek API
+DEFAULT_TIMEOUT = 25  # sekundy - zwiększone dla DeepSeek
+QUICK_TIMEOUT = 12    # sekundy - dla szybszych odpowiedzi
+CONNECTION_TIMEOUT = 8  # sekundy - dla nawiązania połączenia
+DEEPSEEK_TIMEOUT = 35   # sekundy - specjalny timeout dla DeepSeek
 
 # Konfiguracja retry
 DEFAULT_RETRIES = 2   # zmniejszone z 3 na 2

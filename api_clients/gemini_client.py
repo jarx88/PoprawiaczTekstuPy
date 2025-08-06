@@ -71,11 +71,20 @@ def correct_text_gemini(api_key, model, text_to_correct, instruction_prompt, sys
         ]
         
         full_prompt = f"{system_prompt}\n\n{instruction_prompt}\n\n---\n{text_to_correct}\n---"
-        gemini_model = genai.GenerativeModel(
-            model_name=model,
-            generation_config=generation_config,
-            safety_settings=safety_settings
-        )
+        
+        # Check if GenerativeModel is available (version compatibility)
+        try:
+            gemini_model = genai.GenerativeModel(
+                model_name=model,
+                generation_config=generation_config,
+                safety_settings=safety_settings
+            )
+        except AttributeError as e:
+            logger.error(f"Gemini API GenerativeModel not available: {e}")
+            return f"Błąd: Gemini API niekompatybilna wersja. Zaktualizuj google-generativeai: pip install google-generativeai --upgrade"
+        except Exception as e:
+            logger.error(f"Gemini API model creation failed: {e}")
+            return f"Błąd: Nie można utworzyć modelu Gemini: {e}"
         
         # WAŻNE: Gemini SDK nie obsługuje timeout bezpośrednio, więc używamy httpx z timeoutem
         import threading
@@ -86,6 +95,13 @@ def correct_text_gemini(api_key, model, text_to_correct, instruction_prompt, sys
             try:
                 response = gemini_model.generate_content(full_prompt)
                 result[0] = response
+            except AttributeError as e:
+                # Handle Gemini API version compatibility issues
+                if "GenerativeModel" in str(e) or "generate_content" in str(e):
+                    logger.error(f"Gemini API version compatibility issue: {e}")
+                    exception[0] = Exception(f"Gemini API niekompatybilna wersja: {e}")
+                else:
+                    exception[0] = e
             except Exception as e:
                 exception[0] = e
         

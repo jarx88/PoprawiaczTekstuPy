@@ -130,17 +130,39 @@ async def fetch_gemini_models(api_key: str) -> List[str]:
         # Configure Gemini API
         genai.configure(api_key=api_key)
         
-        # List models - synchronous call wrapped in async
+        # List models - synchronous call wrapped in async with better error handling
+        def list_models_sync():
+            try:
+                return list(genai.list_models())
+            except AttributeError as e:
+                logging.warning(f"Gemini API version issue: {e}")
+                # Return empty list to trigger fallback
+                return []
+            except Exception as e:
+                logging.warning(f"Gemini models list error: {e}")
+                return []
+        
         loop = asyncio.get_event_loop()
-        models_response = await loop.run_in_executor(None, list, genai.list_models())
+        models_response = await loop.run_in_executor(None, list_models_sync)
+        
+        if not models_response:
+            logging.warning("No models returned from Gemini API, using fallbacks")
+            return FALLBACK_MODELS["Gemini"]
         
         # Filter dla generative models
         generative_models = []
         for model in models_response:
-            if 'generateContent' in model.supported_generation_methods:
-                # Extract model name from full path
-                model_name = model.name.split('/')[-1]  # models/gemini-pro -> gemini-pro
-                generative_models.append(model_name)
+            try:
+                if hasattr(model, 'supported_generation_methods') and 'generateContent' in model.supported_generation_methods:
+                    # Extract model name from full path
+                    model_name = model.name.split('/')[-1]  # models/gemini-pro -> gemini-pro
+                    generative_models.append(model_name)
+            except Exception as e:
+                logging.debug(f"Error processing model {model}: {e}")
+                continue
+        
+        if not generative_models:
+            return FALLBACK_MODELS["Gemini"]
         
         # Sortuj według priorytetu
         priority_models = ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash']
@@ -155,7 +177,7 @@ async def fetch_gemini_models(api_key: str) -> List[str]:
         other_models = [m for m in generative_models if not any(p in m for p in priority_models)]
         sorted_models.extend(sorted(other_models, reverse=True))
         
-        return sorted_models[:15]
+        return sorted_models[:15] if sorted_models else FALLBACK_MODELS["Gemini"]
         
     except Exception as e:
         logging.warning(f"Nie można pobrać modeli Gemini: {e}")
