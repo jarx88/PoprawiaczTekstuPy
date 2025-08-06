@@ -14,6 +14,7 @@ from PIL import Image, ImageTk
 import threading
 import time
 import queue
+import asyncio
 import tkinter as tk
 from tkinter import messagebox
 from utils import config_manager
@@ -23,6 +24,7 @@ import httpx
 import pyperclip
 import keyboard
 from gui.prompts import get_system_prompt, get_instruction_prompt
+from utils.model_fetcher import fetch_models_for_provider, get_default_model
 
 # Globalne zmienne
 main_app = None
@@ -909,8 +911,11 @@ class SettingsWindow(ctk.CTkToplevel):
         )
         title_label.pack(pady=(0, 20))
         
-        # API configs with colors
+        # API configs with colors and model selection
         self.entries = {}
+        self.model_combos = {}
+        self.model_inputs = {}
+        self.refresh_buttons = {}
         
         apis = [
             ("OpenAI", "OpenAI API Key", "sk-...", "#10a37f"),
@@ -932,6 +937,7 @@ class SettingsWindow(ctk.CTkToplevel):
                 text_color="white"
             ).pack(anchor="w", padx=15, pady=(10, 5))
             
+            # API Key entry
             entry = ctk.CTkEntry(
                 frame,
                 placeholder_text=placeholder,
@@ -942,6 +948,60 @@ class SettingsWindow(ctk.CTkToplevel):
             )
             entry.pack(fill="x", padx=15, pady=(0, 10))
             self.entries[api_key] = entry
+            
+            # Model selection section
+            model_frame = ctk.CTkFrame(frame, fg_color="transparent")
+            model_frame.pack(fill="x", padx=15, pady=(0, 10))
+            
+            ctk.CTkLabel(
+                model_frame,
+                text=f"Model {api_key}:",
+                font=ctk.CTkFont(size=label_font_size-2, weight="bold"),
+                text_color="white"
+            ).pack(anchor="w", pady=(5, 5))
+            
+            # Row z ComboBox i przyciskiem refresh
+            combo_row = ctk.CTkFrame(model_frame, fg_color="transparent")
+            combo_row.pack(fill="x")
+            
+            # ComboBox dla modeli
+            model_combo = ctk.CTkComboBox(
+                combo_row,
+                values=["Ładowanie modeli..."],
+                height=30,
+                fg_color="white",
+                button_color=color,
+                text_color="black",
+                dropdown_fg_color="white"
+            )
+            model_combo.pack(side="left", fill="x", expand=True, padx=(0, 5))
+            self.model_combos[api_key] = model_combo
+            
+            # Przycisk refresh modeli
+            refresh_btn = ctk.CTkButton(
+                combo_row,
+                text="🔄",
+                width=30,
+                height=30,
+                fg_color="white",
+                text_color=color,
+                hover_color="#f0f0f0",
+                command=lambda provider=api_key: self.refresh_models(provider)
+            )
+            refresh_btn.pack(side="right")
+            self.refresh_buttons[api_key] = refresh_btn
+            
+            # Input fallback dla custom modelu
+            model_input = ctk.CTkEntry(
+                model_frame,
+                placeholder_text="lub wpisz model manualnie",
+                height=25,
+                fg_color="white",
+                text_color="black",
+                font=ctk.CTkFont(size=label_font_size-4)
+            )
+            model_input.pack(fill="x", pady=(5, 0))
+            self.model_inputs[api_key] = model_input
         
         # Buttons
         button_frame = ctk.CTkFrame(main_frame)
@@ -972,13 +1032,119 @@ class SettingsWindow(ctk.CTkToplevel):
         for api_key, entry in self.entries.items():
             if self.parent.api_keys.get(api_key):
                 entry.insert(0, self.parent.api_keys[api_key])
+        
+        # Load model settings
+        for api_key, model_combo in self.model_combos.items():
+            current_model = self.parent.models.get(api_key, get_default_model(api_key))
+            if current_model:
+                # Try to set in combo, otherwise use input
+                try:
+                    model_combo.set(current_model)
+                except:
+                    self.model_inputs[api_key].insert(0, current_model)
+        
+        # Load models asynchronously
+        self.after(100, self.load_all_models_async)
     
+    def load_all_models_async(self):
+        """Ładuje modele dla wszystkich API asynchronicznie."""
+        async def load_models():
+            for provider in ["OpenAI", "Anthropic", "Gemini", "DeepSeek"]:
+                api_key = self.entries[provider].get().strip()
+                if api_key:
+                    await self.refresh_models_async(provider, api_key)
+                else:
+                    # Load fallback models
+                    from utils.model_fetcher import FALLBACK_MODELS
+                    models = FALLBACK_MODELS.get(provider, [])
+                    self.after(0, lambda p=provider, m=models: self.update_model_combo(p, m))
+        
+        # Run in thread to avoid blocking UI
+        def run_async():
+            try:
+                asyncio.run(load_models())
+            except Exception as e:
+                logging.error(f"Error loading models: {e}")
+        
+        threading.Thread(target=run_async, daemon=True).start()
+    
+    def refresh_models(self, provider):
+        """Odświeża modele dla konkretnego providera."""
+        api_key = self.entries[provider].get().strip()
+        if not api_key:
+            messagebox.showwarning("Brak API Key", f"Wpisz {provider} API key przed odświeżaniem modeli", parent=self)
+            return
+        
+        # Disable button during refresh
+        self.refresh_buttons[provider].configure(text="⏳", state="disabled")
+        
+        # Run async
+        def run_refresh():
+            async def refresh():
+                await self.refresh_models_async(provider, api_key)
+                # Re-enable button
+                self.after(0, lambda: self.refresh_buttons[provider].configure(text="🔄", state="normal"))
+            
+            try:
+                asyncio.run(refresh())
+            except Exception as e:
+                logging.error(f"Error refreshing models for {provider}: {e}")
+                self.after(0, lambda: self.refresh_buttons[provider].configure(text="❌", state="normal"))
+        
+        threading.Thread(target=run_refresh, daemon=True).start()
+    
+    async def refresh_models_async(self, provider, api_key):
+        """Asynchronicznie pobiera modele dla providera."""
+        try:
+            models = await fetch_models_for_provider(provider, api_key)
+            self.after(0, lambda: self.update_model_combo(provider, models))
+        except Exception as e:
+            logging.error(f"Failed to fetch models for {provider}: {e}")
+            from utils.model_fetcher import FALLBACK_MODELS
+            models = FALLBACK_MODELS.get(provider, [])
+            self.after(0, lambda: self.update_model_combo(provider, models))
+    
+    def update_model_combo(self, provider, models):
+        """Aktualizuje ComboBox z modelami."""
+        if not models:
+            models = [get_default_model(provider)]
+        
+        # Update combo values
+        combo = self.model_combos[provider]
+        combo.configure(values=models)
+        
+        # Set current selection if not set
+        current = combo.get()
+        if current == "Ładowanie modeli..." or current not in models:
+            # Try to keep current model from parent
+            parent_model = self.parent.models.get(provider, get_default_model(provider))
+            if parent_model in models:
+                combo.set(parent_model)
+            else:
+                combo.set(models[0])
+        
+        logging.info(f"Updated {provider} with {len(models)} models")
+
     def save_settings(self):
         """Zapisuje ustawienia."""
         try:
             # Update API keys
             for api_key, entry in self.entries.items():
                 self.parent.api_keys[api_key] = entry.get().strip()
+            
+            # Update models - prefer combo selection over manual input
+            for api_key, combo in self.model_combos.items():
+                selected_model = combo.get()
+                manual_model = self.model_inputs[api_key].get().strip()
+                
+                # Use manual input if provided, otherwise combo selection
+                if manual_model:
+                    self.parent.models[api_key] = manual_model
+                elif selected_model and selected_model != "Ładowanie modeli...":
+                    self.parent.models[api_key] = selected_model
+                else:
+                    # Fallback to default
+                    self.parent.models[api_key] = get_default_model(api_key)
             
             # Save to file
             config_manager.save_config(
