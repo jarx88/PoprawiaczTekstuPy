@@ -29,15 +29,15 @@ jobs:
       run: |
         pip install pyinstaller>=5.0.0
         
-    - name: Build Windows executable (Modern GUI)
+    - name: Build Windows executable (Multi-API Corrector)
       run: |
-        pyinstaller popraw_tekst_modern.spec --noconfirm
+        pyinstaller popraw_tekst_corrector.spec --noconfirm
         
     - name: Test executable exists
       run: |
-        if (Test-Path "dist/popraw_tekst_modern.exe") {
+        if (Test-Path "dist/popraw_tekst_corrector.exe") {
           Write-Host "✅ Executable created successfully"
-          Get-Item "dist/popraw_tekst_modern.exe" | Select-Object Name, Length, LastWriteTime
+          Get-Item "dist/popraw_tekst_corrector.exe" | Select-Object Name, Length, LastWriteTime
         } else {
           Write-Host "❌ Executable not found"
           exit 1
@@ -46,8 +46,8 @@ jobs:
     - name: Upload Windows executable
       uses: actions/upload-artifact@v4
       with:
-        name: popraw-tekst-modern-windows
-        path: dist/popraw_tekst_modern.exe
+        name: popraw-tekst-corrector-windows
+        path: dist/popraw_tekst_corrector.exe
         retention-days: 30
         
     - name: Upload build logs (if failed)
