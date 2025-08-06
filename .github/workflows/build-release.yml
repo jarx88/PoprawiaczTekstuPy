@@ -1,0 +1,146 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'  # Triggered on version tags like v1.0.0
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g., v1.0.0)'
+        required: true
+        type: string
+
+jobs:
+  build-multi-platform:
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            spec: popraw_tekst_modern.spec
+            executable: popraw_tekst_modern.exe
+            artifact-name: popraw-tekst-windows
+            
+          - os: ubuntu-latest
+            spec: popraw_tekst_linux.spec
+            executable: popraw_tekst_modern_linux
+            artifact-name: popraw-tekst-linux
+            
+    runs-on: ${{ matrix.os }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python 3.8
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.8'
+        
+    - name: Install system dependencies (Linux only)
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y python3-tk
+        
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pyinstaller>=5.0.0
+        
+    - name: Build executable
+      run: |
+        pyinstaller ${{ matrix.spec }} --noconfirm
+        
+    - name: Verify build (Windows)
+      if: matrix.os == 'windows-latest'
+      run: |
+        if (Test-Path "dist/${{ matrix.executable }}") {
+          Write-Host "✅ Windows executable created"
+          Get-Item "dist/${{ matrix.executable }}" | Select-Object Name, Length
+        } else {
+          Write-Host "❌ Windows build failed"
+          exit 1
+        }
+        
+    - name: Verify build (Linux)
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        if [ -f "dist/${{ matrix.executable }}" ]; then
+          echo "✅ Linux executable created"
+          ls -la "dist/${{ matrix.executable }}"
+        else
+          echo "❌ Linux build failed"
+          exit 1
+        fi
+        
+    - name: Upload executable
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.artifact-name }}
+        path: dist/${{ matrix.executable }}
+        retention-days: 90
+
+  create-release:
+    needs: build-multi-platform
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: ./artifacts
+        
+    - name: Display downloaded files
+      run: |
+        echo "Downloaded artifacts:"
+        find ./artifacts -type f -ls
+        
+    - name: Determine version
+      id: version
+      run: |
+        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+        else
+          echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+        fi
+        
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ steps.version.outputs.version }}
+        name: PoprawiaczTekstuPy ${{ steps.version.outputs.version }}
+        body: |
+          ## PoprawiaczTekstuPy ${{ steps.version.outputs.version }}
+          
+          ### Zmiany w tej wersji:
+          - ✅ Nowoczesny GUI (CustomTkinter)
+          - ✅ Lepsza wydajność i stabilność
+          - ✅ System tray support
+          - ✅ Dark/Light mode
+          - ✅ Poprawki hotkey handling
+          
+          ### Pliki do pobrania:
+          - **Windows**: `popraw_tekst_modern.exe` 
+          - **Linux**: `popraw_tekst_modern_linux`
+          
+          ### Instalacja:
+          1. Pobierz odpowiedni plik dla swojego systemu
+          2. Na Windows: uruchom `popraw_tekst_modern.exe`
+          3. Na Linux: `chmod +x popraw_tekst_modern_linux && ./popraw_tekst_modern_linux`
+          
+          ### API Keys:
+          Skonfiguruj klucze API w ustawieniach aplikacji.
+          
+        files: |
+          artifacts/popraw-tekst-windows/popraw_tekst_modern.exe
+          artifacts/popraw-tekst-linux/popraw_tekst_modern_linux
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

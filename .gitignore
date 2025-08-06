@@ -1,0 +1,99 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec.tmp
+
+# Virtual environments
+venv/
+.env
+.venv
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+*.log
+logs/
+PoprawiaczTekstu_logs/
+
+# Configuration (może zawierać API keys)
+config.ini
+
+# Wine
+.wine/
+
+# Build artifacts
+*.exe
+*.dmg
+*.pkg
+*.deb
+*.rpm
+*.tar.gz
+*.zip
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+
+# Documentation (except README.md)
+*.md
+!README.md
+
+# Test files
+test_*.py
+tests/
+
+# Local development
+.local/
+local_*.py
+debug_*.py
+
+# API Keys (dodatkowe zabezpieczenie)
+*api_key*
+*secret*
+.env*
+*.key
+
+# PyInstaller build logs
+warn-*.txt
+xref-*.html

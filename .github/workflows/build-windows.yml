@@ -1,0 +1,96 @@
+name: Build Windows EXE
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:  # Umożliwia ręczne uruchomienie
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python 3.8
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.8'
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        
+    - name: Install PyInstaller
+      run: |
+        pip install pyinstaller>=5.0.0
+        
+    - name: Build Windows executable (Modern GUI)
+      run: |
+        pyinstaller popraw_tekst_modern.spec --noconfirm
+        
+    - name: Test executable exists
+      run: |
+        if (Test-Path "dist/popraw_tekst_modern.exe") {
+          Write-Host "✅ Executable created successfully"
+          Get-Item "dist/popraw_tekst_modern.exe" | Select-Object Name, Length, LastWriteTime
+        } else {
+          Write-Host "❌ Executable not found"
+          exit 1
+        }
+        
+    - name: Upload Windows executable
+      uses: actions/upload-artifact@v4
+      with:
+        name: popraw-tekst-modern-windows
+        path: dist/popraw_tekst_modern.exe
+        retention-days: 30
+        
+    - name: Upload build logs (if failed)
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-logs
+        path: |
+          build/
+          *.log
+        retention-days: 7
+
+  # Opcjonalny Linux build do porównania
+  build-linux:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python 3.8
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.8'
+        
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y python3-tk
+        
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pyinstaller>=5.0.0
+        
+    - name: Build Linux executable
+      run: |
+        pyinstaller popraw_tekst_linux.spec --noconfirm
+        
+    - name: Upload Linux executable
+      uses: actions/upload-artifact@v4
+      with:
+        name: popraw-tekst-modern-linux
+        path: dist/popraw_tekst_modern_linux
+        retention-days: 30
