@@ -541,82 +541,134 @@ class MultiAPICorrector(ctk.CTk):
                 self.cancel_all_processing()
                 time.sleep(0.2)  # Daj czas na anulowanie
             
+            # Sprawdź informacje o aktywnym oknie
+            active_window_info = ""
+            try:
+                import win32gui
+                active_window = win32gui.GetForegroundWindow()
+                active_window_info = win32gui.GetWindowText(active_window)
+                logging.debug(f"Aktywne okno: {active_window_info}")
+            except Exception as e:
+                logging.debug(f"Nie można pobrać info o oknie: {e}")
+            
             # Zapisz obecny schowek
             old_clipboard = ""
             try:
                 old_clipboard = pyperclip.paste()
+                logging.debug(f"Obecny schowek: {len(old_clipboard) if old_clipboard else 0} znaków")
             except:
                 pass
             
             # Wielokrotne próby kopiowania tekstu różnymi metodami
             clipboard_text = ""
+            max_attempts = 3
             
-            # Metoda 1: keyboard library
-            try:
-                logging.debug("Próba kopiowania metodą keyboard.send")
-                time.sleep(0.1)
-                keyboard.send('ctrl+c')
-                time.sleep(0.4)  # Zwiększony czas oczekiwania
-                clipboard_text = pyperclip.paste()
-                if clipboard_text and clipboard_text.strip() and clipboard_text != old_clipboard:
-                    logging.info("Kopiowanie udane metodą keyboard.send")
-                else:
-                    clipboard_text = ""
-            except Exception as e:
-                logging.warning(f"Metoda keyboard.send nie powiodła się: {e}")
-            
-            # Metoda 2: pynput jako fallback
-            if not clipboard_text or not clipboard_text.strip():
-                try:
-                    logging.debug("Próba kopiowania metodą pynput")
-                    from pynput.keyboard import Key, Controller
-                    kb_controller = Controller()
+            for attempt in range(max_attempts):
+                logging.debug(f"Próba kopiowania {attempt + 1}/{max_attempts}")
+                
+                # Metoda 1: pynput (najbardziej niezawodna)
+                if not clipboard_text or clipboard_text == old_clipboard:
+                    try:
+                        logging.debug("Kopiowanie metodą pynput")
+                        from pynput.keyboard import Key, Controller
+                        kb_controller = Controller()
+                        
+                        # Krótkie opóźnienie przed akcją
+                        time.sleep(0.05)
+                        
+                        # Wysyłanie Ctrl+C
+                        kb_controller.press(Key.ctrl)
+                        kb_controller.press('c')
+                        time.sleep(0.02)  # Krótkie hold
+                        kb_controller.release('c')
+                        kb_controller.release(Key.ctrl)
+                        
+                        # Czekaj na skopiowanie - progresywnie dłużej
+                        wait_time = 0.2 + (attempt * 0.1)  # 0.2s, 0.3s, 0.4s
+                        time.sleep(wait_time)
+                        
+                        new_clipboard = pyperclip.paste()
+                        if new_clipboard and new_clipboard.strip() and new_clipboard != old_clipboard:
+                            clipboard_text = new_clipboard
+                            logging.info(f"Kopiowanie udane metodą pynput (próba {attempt + 1})")
+                            break
+                            
+                    except Exception as e:
+                        logging.warning(f"Metoda pynput próba {attempt + 1}: {e}")
+                
+                # Metoda 2: Windows SendKeys
+                if not clipboard_text or clipboard_text == old_clipboard:
+                    try:
+                        import win32api
+                        import win32con
+                        logging.debug("Kopiowanie metodą SendKeys")
+                        
+                        time.sleep(0.05)
+                        
+                        # Wyślij Ctrl+C z prawidłowym timing
+                        win32api.keybd_event(win32con.VK_CONTROL, 0, 0, 0)
+                        win32api.keybd_event(ord('C'), 0, 0, 0)
+                        time.sleep(0.02)  # Hold keys
+                        win32api.keybd_event(ord('C'), 0, win32con.KEYEVENTF_KEYUP, 0)
+                        win32api.keybd_event(win32con.VK_CONTROL, 0, win32con.KEYEVENTF_KEYUP, 0)
+                        
+                        wait_time = 0.2 + (attempt * 0.1)
+                        time.sleep(wait_time)
+                        
+                        new_clipboard = pyperclip.paste()
+                        if new_clipboard and new_clipboard.strip() and new_clipboard != old_clipboard:
+                            clipboard_text = new_clipboard
+                            logging.info(f"Kopiowanie udane metodą SendKeys (próba {attempt + 1})")
+                            break
+                            
+                    except Exception as e:
+                        logging.warning(f"Metoda SendKeys próba {attempt + 1}: {e}")
+                
+                # Metoda 3: keyboard library (fallback)
+                if not clipboard_text or clipboard_text == old_clipboard:
+                    try:
+                        logging.debug("Kopiowanie metodą keyboard.send")
+                        time.sleep(0.05)
+                        keyboard.send('ctrl+c')
+                        
+                        wait_time = 0.2 + (attempt * 0.1)
+                        time.sleep(wait_time)
+                        
+                        new_clipboard = pyperclip.paste()
+                        if new_clipboard and new_clipboard.strip() and new_clipboard != old_clipboard:
+                            clipboard_text = new_clipboard
+                            logging.info(f"Kopiowanie udane metodą keyboard.send (próba {attempt + 1})")
+                            break
+                            
+                    except Exception as e:
+                        logging.warning(f"Metoda keyboard.send próba {attempt + 1}: {e}")
+                
+                # Jeśli wszystkie metody zawiodły w tej próbie, czekaj przed następną
+                if attempt < max_attempts - 1:
                     time.sleep(0.1)
-                    kb_controller.press(Key.ctrl)
-                    kb_controller.press('c')
-                    kb_controller.release('c')
-                    kb_controller.release(Key.ctrl)
-                    time.sleep(0.4)
-                    clipboard_text = pyperclip.paste()
-                    if clipboard_text and clipboard_text.strip() and clipboard_text != old_clipboard:
-                        logging.info("Kopiowanie udane metodą pynput")
-                    else:
-                        clipboard_text = ""
-                except Exception as e:
-                    logging.warning(f"Metoda pynput nie powiodła się: {e}")
-            
-            # Metoda 3: Windows SendKeys jako last resort
-            if not clipboard_text or not clipboard_text.strip():
-                try:
-                    import win32api
-                    import win32con
-                    logging.debug("Próba kopiowania metodą SendKeys")
-                    time.sleep(0.1)
-                    # Wyślij Ctrl+C
-                    win32api.keybd_event(win32con.VK_CONTROL, 0, 0, 0)
-                    win32api.keybd_event(ord('C'), 0, 0, 0)
-                    win32api.keybd_event(ord('C'), 0, win32con.KEYEVENTF_KEYUP, 0)
-                    win32api.keybd_event(win32con.VK_CONTROL, 0, win32con.KEYEVENTF_KEYUP, 0)
-                    time.sleep(0.4)
-                    clipboard_text = pyperclip.paste()
-                    if clipboard_text and clipboard_text.strip() and clipboard_text != old_clipboard:
-                        logging.info("Kopiowanie udane metodą SendKeys")
-                    else:
-                        clipboard_text = ""
-                except Exception as e:
-                    logging.warning(f"Metoda SendKeys nie powiodła się: {e}")
             
             # Ostateczne sprawdzenie
             if not clipboard_text or not clipboard_text.strip() or clipboard_text == old_clipboard:
                 self.after(0, lambda: self.update_status("⚠️ Brak zaznaczonego tekstu"))
-                logging.warning("Nie udało się skopiować zaznaczonego tekstu żadną metodą")
+                logging.warning(f"Nie udało się skopiować tekstu. Aktywne okno: {active_window_info}")
+                
+                # Sprawdź czy to może być problematyczna aplikacja
+                problematic_apps = ["cmd.exe", "powershell", "terminal", "console", "putty"]
+                app_warning = ""
+                if any(app.lower() in active_window_info.lower() for app in problematic_apps):
+                    app_warning = f"\n⚠️ Aplikacja '{active_window_info}' może blokować kopiowanie."
+                
                 # Pokaż message box z lepszymi instrukcjami
                 self.after(0, lambda: messagebox.showinfo(
                     "Nie skopiowano tekstu",
-                    "1. Zaznacz tekst w dowolnej aplikacji\n"
-                    "2. Upewnij się, że tekst jest faktycznie zaznaczony\n" 
-                    "3. Spróbuj ponownie Ctrl+Shift+C\n\n"
-                    "Lub skopiuj tekst ręcznie (Ctrl+C) i użyj aplikacji.",
+                    f"Nie udało się automatycznie skopiować zaznaczonego tekstu.{app_warning}\n\n"
+                    "🔧 Rozwiązania:\n"
+                    "1. Zaznacz tekst i skopiuj ręcznie (Ctrl+C)\n"
+                    "2. Następnie użyj przycisku '📋 Wklej tekst'\n\n"
+                    "🎯 Lub spróbuj ponownie:\n"
+                    "1. Upewnij się, że tekst jest zaznaczony\n"
+                    "2. Użyj Ctrl+Shift+C ponownie\n\n"
+                    "📱 Aplikacja działa najlepiej z: Notatnik, Word, przeglądarki, edytory tekstu",
                     parent=None
                 ))
                 return
