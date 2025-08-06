@@ -235,7 +235,7 @@ class MultiAPICorrector(ctk.CTk):
                 width=30,
                 height=25,
                 fg_color="transparent",
-                hover_color="#ffffff33",
+                hover_color="#f0f0f0",
                 text_color="white",
                 command=lambda idx=i: self.cancel_single_api(idx)
             )
@@ -248,7 +248,7 @@ class MultiAPICorrector(ctk.CTk):
                 header_content,
                 height=8,
                 progress_color="white",
-                fg_color="#ffffff33"
+                fg_color="#e0e0e0"
             )
             progress_bar.pack(side="right", padx=5, fill="x", expand=True)
             progress_bar.set(0)
