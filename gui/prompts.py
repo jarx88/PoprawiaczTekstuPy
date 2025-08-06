@@ -50,8 +50,12 @@ prompt_system_prompt = (
     "Tłumaczenie: Dodaj nową funkcję"
 )
 
-def get_system_prompt(style):
+def get_system_prompt(style="normal"):
     """Returns the appropriate system prompt based on the selected style"""
     if style == 'prompt':
         return prompt_system_prompt
     return system_prompt
+
+def get_instruction_prompt(style="normal"):
+    """Returns the appropriate instruction prompt based on the selected style"""
+    return instructions.get(style, instructions["normal"])

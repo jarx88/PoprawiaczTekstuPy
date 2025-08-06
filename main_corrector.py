@@ -22,6 +22,7 @@ from api_clients import openai_client, anthropic_client, gemini_client, deepseek
 import httpx
 import pyperclip
 import keyboard
+from gui.prompts import get_system_prompt, get_instruction_prompt
 
 # Globalne zmienne
 main_app = None
@@ -38,9 +39,10 @@ def get_assets_dir_path():
 
 class AnimatedGIF(tk.Label):
     """Widget dla animowanego GIF w tkinter."""
-    def __init__(self, master, path):
+    def __init__(self, master, path, scale_factor=1.0):
         self.master = master
         self.path = path
+        self.scale_factor = scale_factor
         self.frames = []
         self.current_frame = 0
         self.is_running = False
@@ -54,12 +56,13 @@ class AnimatedGIF(tk.Label):
                 while True:
                     frame = self.gif.copy()
                     
-                    # Resize with fallback for older PIL versions
+                    # Resize with scale factor for different screen sizes
+                    gif_size = max(120, int(200 * self.scale_factor))
                     try:
-                        frame = frame.resize((48, 48), Image.Resampling.LANCZOS)
+                        frame = frame.resize((gif_size, gif_size), Image.Resampling.LANCZOS)
                     except AttributeError:
                         # Fallback for older PIL versions
-                        frame = frame.resize((48, 48), Image.LANCZOS)
+                        frame = frame.resize((gif_size, gif_size), Image.LANCZOS)
                     
                     self.frames.append(ImageTk.PhotoImage(frame))
                     self.gif.seek(len(self.frames))
@@ -69,7 +72,8 @@ class AnimatedGIF(tk.Label):
         except Exception as e:
             logging.error(f"Błąd ładowania GIF {path}: {e}")
             # Create a simple colored square as fallback
-            fallback_image = Image.new('RGB', (48, 48), color='blue')
+            gif_size = max(120, int(200 * self.scale_factor))
+            fallback_image = Image.new('RGB', (gif_size, gif_size), color='blue')
             self.frames = [ImageTk.PhotoImage(fallback_image)]
         
         super().__init__(master, image=self.frames[0] if self.frames else None)
@@ -98,9 +102,14 @@ class MultiAPICorrector(ctk.CTk):
     def __init__(self):
         super().__init__()
         
+        # Zmienne do trackingu monitora
+        self.last_screen_width = 0
+        self.last_screen_height = 0
+        self.scale_factor = 1.0
+        
         # Konfiguracja głównego okna
         self.title("PoprawiaczTekstuPy - Multi-API")
-        self.geometry("1400x850")
+        self.setup_responsive_window()
         
         # Ustaw theme
         ctk.set_appearance_mode("system")
@@ -127,6 +136,111 @@ class MultiAPICorrector(ctk.CTk):
         # Start minimalized
         self.after(100, self.minimize_to_tray)
         
+        # Bind window configure events
+        self.bind('<Configure>', self.on_window_configure)
+    
+    def get_screen_dimensions(self):
+        """Pobiera wymiary aktualnego ekranu."""
+        self.update_idletasks()  # Upewnij się że okno jest zaktualizowane
+        screen_width = self.winfo_screenwidth()
+        screen_height = self.winfo_screenheight()
+        return screen_width, screen_height
+    
+    def calculate_optimal_size(self, screen_width, screen_height):
+        """Oblicza optymalny rozmiar okna dla danej rozdzielczości."""
+        # Procenty ekranu dla głównego okna
+        width_percent = 0.75  # 75% szerokości ekranu
+        height_percent = 0.80  # 80% wysokości ekranu
+        
+        optimal_width = int(screen_width * width_percent)
+        optimal_height = int(screen_height * height_percent)
+        
+        # Minimalne i maksymalne rozmiary
+        min_width, min_height = 1000, 700
+        max_width, max_height = 2400, 1400
+        
+        # Ogranicz rozmiary
+        optimal_width = max(min_width, min(optimal_width, max_width))
+        optimal_height = max(min_height, min(optimal_height, max_height))
+        
+        return optimal_width, optimal_height
+    
+    def calculate_scale_factor(self, screen_width, screen_height):
+        """Oblicza współczynnik skalowania na podstawie rozdzielczości."""
+        # Bazowa rozdzielczość (1920x1080)
+        base_width, base_height = 1920, 1080
+        
+        # Oblicz współczynnik skalowania
+        width_scale = screen_width / base_width
+        height_scale = screen_height / base_height
+        
+        # Użyj średniej, ale ogranicz zakres
+        scale = (width_scale + height_scale) / 2
+        scale = max(0.7, min(scale, 1.8))  # Ogranicz między 70% a 180%
+        
+        return scale
+    
+    def setup_responsive_window(self):
+        """Konfiguruje responsywne okno."""
+        screen_width, screen_height = self.get_screen_dimensions()
+        optimal_width, optimal_height = self.calculate_optimal_size(screen_width, screen_height)
+        self.scale_factor = self.calculate_scale_factor(screen_width, screen_height)
+        
+        # Ustaw rozmiar i wyśrodkuj okno
+        x = (screen_width - optimal_width) // 2
+        y = (screen_height - optimal_height) // 2
+        
+        self.geometry(f"{optimal_width}x{optimal_height}+{x}+{y}")
+        self.minsize(1000, 700)  # Minimalny rozmiar
+        
+        # Zapisz aktualne wymiary ekranu
+        self.last_screen_width = screen_width
+        self.last_screen_height = screen_height
+        
+        logging.info(f"Window setup: {optimal_width}x{optimal_height}, scale: {self.scale_factor:.2f}")
+    
+    def on_window_configure(self, event):
+        """Handler dla eventów zmiany okna."""
+        # Sprawdź tylko dla głównego okna, nie dla sub-widgets
+        if event.widget != self:
+            return
+        
+        # Sprawdź czy zmienił się monitor/rozdzielczość
+        current_screen_width, current_screen_height = self.get_screen_dimensions()
+        
+        if (current_screen_width != self.last_screen_width or 
+            current_screen_height != self.last_screen_height):
+            
+            logging.info(f"Monitor change detected: {current_screen_width}x{current_screen_height}")
+            
+            # Przeliczy skalowanie
+            new_scale = self.calculate_scale_factor(current_screen_width, current_screen_height)
+            
+            if abs(new_scale - self.scale_factor) > 0.1:  # Jeśli znacząca zmiana
+                self.scale_factor = new_scale
+                self.rescale_ui_components()
+            
+            # Zaktualizuj zapisane wymiary
+            self.last_screen_width = current_screen_width
+            self.last_screen_height = current_screen_height
+    
+    def rescale_ui_components(self):
+        """Przeskalowuje komponenty UI na podstawie scale_factor."""
+        # Przeskaluj czcionki
+        base_font_size = 16
+        scaled_font_size = max(12, int(base_font_size * self.scale_factor))
+        
+        if hasattr(self, 'status_label'):
+            self.status_label.configure(font=ctk.CTkFont(size=scaled_font_size, weight="bold"))
+        
+        # Przeskaluj rozmiary animacji GIF
+        if hasattr(self, 'api_loaders'):
+            new_gif_size = max(120, int(200 * self.scale_factor))
+            # Tutaj można by przeładować GIFy z nowym rozmiarem, ale to kosztowne
+            # Zostawiamy to jako jest dla wydajności
+        
+        logging.info(f"UI rescaled with factor: {self.scale_factor:.2f}")
+
     def setup_ui(self):
         """Konfiguruje interfejs z 4 panelami API."""
         
@@ -139,11 +253,12 @@ class MultiAPICorrector(ctk.CTk):
         top_frame.pack(fill="x", padx=5, pady=5)
         top_frame.pack_propagate(False)
         
-        # Status label
+        # Status label (skalowana czcionka)
+        status_font_size = max(12, int(16 * self.scale_factor))
         self.status_label = ctk.CTkLabel(
             top_frame,
             text="⌨️ Ctrl+Shift+C - zaznacz tekst i naciśnij aby poprawić",
-            font=ctk.CTkFont(size=16, weight="bold")
+            font=ctk.CTkFont(size=status_font_size, weight="bold")
         )
         self.status_label.pack(pady=(10, 5))
         
@@ -151,24 +266,27 @@ class MultiAPICorrector(ctk.CTk):
         info_frame = ctk.CTkFrame(top_frame, fg_color="transparent")
         info_frame.pack()
         
+        # Skalowane czcionki dla info labels
+        info_font_size = max(10, int(12 * self.scale_factor))
+        
         self.session_label = ctk.CTkLabel(
             info_frame,
             text="📝 Sesja: 0",
-            font=ctk.CTkFont(size=12)
+            font=ctk.CTkFont(size=info_font_size)
         )
         self.session_label.pack(side="left", padx=10)
         
         self.api_counter_label = ctk.CTkLabel(
             info_frame,
             text="🤖 API: 0/4",
-            font=ctk.CTkFont(size=12)
+            font=ctk.CTkFont(size=info_font_size)
         )
         self.api_counter_label.pack(side="left", padx=10)
         
         self.progress_label = ctk.CTkLabel(
             info_frame,
             text="",
-            font=ctk.CTkFont(size=12)
+            font=ctk.CTkFont(size=info_font_size)
         )
         self.progress_label.pack(side="left", padx=10)
         
@@ -265,16 +383,24 @@ class MultiAPICorrector(ctk.CTk):
             loader_frame.pack_forget()  # Ukryj na początku
             self.api_loader_frames.append(loader_frame)
             
-            # Animated GIF loader
+            # Animated GIF loader (skalowany)
             gif_path = os.path.join(get_assets_dir_path(), "loader.gif")
             if os.path.exists(gif_path):
-                loader = AnimatedGIF(loader_frame, gif_path)
+                loader = AnimatedGIF(loader_frame, gif_path, self.scale_factor)
                 loader.pack(expand=True)
                 self.api_loaders.append(loader)
             else:
-                # Fallback - zwykły label
-                loader = tk.Label(loader_frame, text="⏳ Ładowanie...", bg="white")
-                loader.pack(expand=True)
+                # Fallback - zwykły label z przeskalowaną czcionką
+                fallback_font_size = max(16, int(24 * self.scale_factor))
+                loader = tk.Label(
+                    loader_frame, 
+                    text="⏳\nŁadowanie...", 
+                    bg="white",
+                    font=("Arial", fallback_font_size, "bold"),
+                    fg="#666666",
+                    justify="center"
+                )
+                loader.pack(expand=True, fill="both")
                 self.api_loaders.append(loader)
             
             # Text widget dla wyniku
@@ -477,10 +603,10 @@ class MultiAPICorrector(ctk.CTk):
         session_id = self.current_session_id
         
         apis = [
-            (0, "OpenAI", openai_client.popraw_tekst),
-            (1, "Anthropic", anthropic_client.popraw_tekst),
-            (2, "Gemini", gemini_client.popraw_tekst),
-            (3, "DeepSeek", deepseek_client.popraw_tekst)
+            (0, "OpenAI", openai_client.correct_text_openai),
+            (1, "Anthropic", anthropic_client.correct_text_anthropic),
+            (2, "Gemini", gemini_client.correct_text_gemini),
+            (3, "DeepSeek", deepseek_client.correct_text_deepseek)
         ]
         
         for idx, api_name, api_func in apis:
@@ -515,10 +641,17 @@ class MultiAPICorrector(ctk.CTk):
             
             def run_api():
                 try:
+                    # Get prompts
+                    instruction_prompt = get_instruction_prompt("normal")
+                    system_prompt = get_system_prompt("normal")
+                    
+                    # Call API with correct arguments: (api_key, model, text, instruction_prompt, system_prompt)
                     api_thread_result[0] = api_func(
-                        text,
                         self.api_keys[api_name],
-                        self.models.get(api_name, "")
+                        self.models.get(api_name, ""),
+                        text,
+                        instruction_prompt,
+                        system_prompt
                     )
                 except Exception as e:
                     api_thread_result[1] = e
@@ -741,8 +874,22 @@ class SettingsWindow(ctk.CTkToplevel):
         self.parent = parent
         
         self.title("Ustawienia API")
-        self.geometry("500x500")
-        self.resizable(False, False)
+        
+        # Oblicz rozmiar względem głównego okna
+        parent_width = parent.winfo_width()
+        parent_height = parent.winfo_height()
+        settings_width = max(400, int(parent_width * 0.4))
+        settings_height = max(500, int(parent_height * 0.7))
+        
+        # Wyśrodkuj względem rodzica
+        parent_x = parent.winfo_x()
+        parent_y = parent.winfo_y()
+        x = parent_x + (parent_width - settings_width) // 2
+        y = parent_y + (parent_height - settings_height) // 2
+        
+        self.geometry(f"{settings_width}x{settings_height}+{x}+{y}")
+        self.minsize(350, 450)  # Minimalny rozmiar
+        self.resizable(True, True)  # Umożliw zmianę rozmiaru
         
         self.transient(parent)
         self.setup_ui()
@@ -753,10 +900,12 @@ class SettingsWindow(ctk.CTkToplevel):
         main_frame = ctk.CTkScrollableFrame(self)
         main_frame.pack(fill="both", expand=True, padx=20, pady=20)
         
+        # Skalowana czcionka tytułu
+        title_font_size = max(16, int(18 * self.parent.scale_factor))
         title_label = ctk.CTkLabel(
             main_frame, 
             text="Konfiguracja kluczy API",
-            font=ctk.CTkFont(size=18, weight="bold")
+            font=ctk.CTkFont(size=title_font_size, weight="bold")
         )
         title_label.pack(pady=(0, 20))
         
@@ -774,10 +923,12 @@ class SettingsWindow(ctk.CTkToplevel):
             frame = ctk.CTkFrame(main_frame, fg_color=color, corner_radius=10)
             frame.pack(fill="x", pady=10)
             
+            # Skalowana czcionka dla label
+            label_font_size = max(12, int(14 * self.parent.scale_factor))
             ctk.CTkLabel(
                 frame,
                 text=label,
-                font=ctk.CTkFont(weight="bold"),
+                font=ctk.CTkFont(size=label_font_size, weight="bold"),
                 text_color="white"
             ).pack(anchor="w", padx=15, pady=(10, 5))
             
@@ -861,12 +1012,34 @@ def create_tray_icon(app):
             # Fallback - create simple icon
             image = Image.new('RGB', (64, 64), color='#10a37f')
         
+        # Check autostart status
+        def toggle_autostart():
+            try:
+                if config_manager.is_in_startup():
+                    config_manager.remove_from_startup()
+                    tray_icon.notify("PoprawiaczTekstuPy", "Autostart wyłączony")
+                else:
+                    if config_manager.add_to_startup():
+                        tray_icon.notify("PoprawiaczTekstuPy", "Autostart włączony")
+                    else:
+                        tray_icon.notify("PoprawiaczTekstuPy", "Błąd włączania autostartu")
+            except Exception as e:
+                logging.error(f"Błąd toggle autostart: {e}")
+                tray_icon.notify("PoprawiaczTekstuPy", "Błąd konfiguracji autostartu")
+
+        def get_autostart_text():
+            try:
+                return "⏹️ Wyłącz autostart" if config_manager.is_in_startup() else "🚀 Włącz autostart"
+            except:
+                return "🚀 Autostart"
+
         # Tray menu
         menu = pystray.Menu(
             pystray.MenuItem("📱 Pokaż aplikację", lambda: app.after(0, app.show_window)),
             pystray.MenuItem("🔽 Minimalizuj", lambda: app.after(0, app.minimize_to_tray)),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("⚙️ Ustawienia", lambda: app.after(0, app.show_settings)),
+            pystray.MenuItem(get_autostart_text(), toggle_autostart),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("❌ Zakończ", lambda: quit_app())
         )
@@ -902,8 +1075,40 @@ def quit_app():
     
     sys.exit(0)
 
+def cleanup_old_logs(log_dir, max_files=10):
+    """Usuwa stare pliki logów, zachowując tylko najnowsze max_files plików."""
+    try:
+        if not os.path.exists(log_dir):
+            return
+            
+        # Znajdź wszystkie pliki logów
+        log_files = []
+        for file in os.listdir(log_dir):
+            if file.startswith("app_corrector_") and file.endswith(".log"):
+                file_path = os.path.join(log_dir, file)
+                try:
+                    mtime = os.path.getmtime(file_path)
+                    log_files.append((file_path, mtime))
+                except OSError:
+                    continue
+        
+        # Sortuj według czasu modyfikacji (najnowsze pierwsze)
+        log_files.sort(key=lambda x: x[1], reverse=True)
+        
+        # Usuń stare pliki jeśli jest ich więcej niż max_files
+        if len(log_files) > max_files:
+            for file_path, _ in log_files[max_files:]:
+                try:
+                    os.remove(file_path)
+                    print(f"Usunięto stary log: {file_path}")
+                except OSError:
+                    pass
+                    
+    except Exception as e:
+        print(f"Błąd czyszczenia logów: {e}")
+
 def setup_logging():
-    """Konfiguruje logging."""
+    """Konfiguruje logging z automatycznym czyszczeniem starych logów."""
     try:
         # Try home directory first
         try:
@@ -914,6 +1119,9 @@ def setup_logging():
             import tempfile
             log_dir = os.path.join(tempfile.gettempdir(), "PoprawiaczTekstu_logs")
             os.makedirs(log_dir, exist_ok=True)
+        
+        # Wyczyść stare logi (zachowaj 7 najnowszych)
+        cleanup_old_logs(log_dir, max_files=7)
             
         log_file = os.path.join(log_dir, f"app_corrector_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log")
         
@@ -934,6 +1142,7 @@ def setup_logging():
         
         if len(handlers) > 1:
             logging.info(f"Multi-API Corrector logs: {log_file}")
+            logging.info(f"Automatyczne czyszczenie logów - zachowywane 7 najnowszych plików")
         else:
             logging.info("Multi-API Corrector - console logging only")
             
