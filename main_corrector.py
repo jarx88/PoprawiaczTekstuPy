@@ -473,6 +473,17 @@ class MultiAPICorrector(ctk.CTk):
         )
         self.settings_button.pack(side="left", padx=5)
         
+        self.paste_button = ctk.CTkButton(
+            control_frame,
+            text="📋 Wklej tekst",
+            command=self.paste_and_process,
+            width=140,
+            height=40,
+            fg_color="#16a34a",
+            hover_color="#15803d"
+        )
+        self.paste_button.pack(side="left", padx=5)
+        
         self.minimize_button = ctk.CTkButton(
             control_frame,
             text="🔽 Minimalizuj",
@@ -530,20 +541,82 @@ class MultiAPICorrector(ctk.CTk):
                 self.cancel_all_processing()
                 time.sleep(0.2)  # Daj czas na anulowanie
             
-            # Symuluj Ctrl+C żeby skopiować zaznaczony tekst
-            time.sleep(0.1)
-            keyboard.send('ctrl+c')
-            time.sleep(0.3)  # Czekaj na clipboard
+            # Zapisz obecny schowek
+            old_clipboard = ""
+            try:
+                old_clipboard = pyperclip.paste()
+            except:
+                pass
             
-            # Pobierz tekst ze schowka
-            clipboard_text = pyperclip.paste()
+            # Wielokrotne próby kopiowania tekstu różnymi metodami
+            clipboard_text = ""
             
+            # Metoda 1: keyboard library
+            try:
+                logging.debug("Próba kopiowania metodą keyboard.send")
+                time.sleep(0.1)
+                keyboard.send('ctrl+c')
+                time.sleep(0.4)  # Zwiększony czas oczekiwania
+                clipboard_text = pyperclip.paste()
+                if clipboard_text and clipboard_text.strip() and clipboard_text != old_clipboard:
+                    logging.info("Kopiowanie udane metodą keyboard.send")
+                else:
+                    clipboard_text = ""
+            except Exception as e:
+                logging.warning(f"Metoda keyboard.send nie powiodła się: {e}")
+            
+            # Metoda 2: pynput jako fallback
             if not clipboard_text or not clipboard_text.strip():
+                try:
+                    logging.debug("Próba kopiowania metodą pynput")
+                    from pynput.keyboard import Key, Controller
+                    kb_controller = Controller()
+                    time.sleep(0.1)
+                    kb_controller.press(Key.ctrl)
+                    kb_controller.press('c')
+                    kb_controller.release('c')
+                    kb_controller.release(Key.ctrl)
+                    time.sleep(0.4)
+                    clipboard_text = pyperclip.paste()
+                    if clipboard_text and clipboard_text.strip() and clipboard_text != old_clipboard:
+                        logging.info("Kopiowanie udane metodą pynput")
+                    else:
+                        clipboard_text = ""
+                except Exception as e:
+                    logging.warning(f"Metoda pynput nie powiodła się: {e}")
+            
+            # Metoda 3: Windows SendKeys jako last resort
+            if not clipboard_text or not clipboard_text.strip():
+                try:
+                    import win32api
+                    import win32con
+                    logging.debug("Próba kopiowania metodą SendKeys")
+                    time.sleep(0.1)
+                    # Wyślij Ctrl+C
+                    win32api.keybd_event(win32con.VK_CONTROL, 0, 0, 0)
+                    win32api.keybd_event(ord('C'), 0, 0, 0)
+                    win32api.keybd_event(ord('C'), 0, win32con.KEYEVENTF_KEYUP, 0)
+                    win32api.keybd_event(win32con.VK_CONTROL, 0, win32con.KEYEVENTF_KEYUP, 0)
+                    time.sleep(0.4)
+                    clipboard_text = pyperclip.paste()
+                    if clipboard_text and clipboard_text.strip() and clipboard_text != old_clipboard:
+                        logging.info("Kopiowanie udane metodą SendKeys")
+                    else:
+                        clipboard_text = ""
+                except Exception as e:
+                    logging.warning(f"Metoda SendKeys nie powiodła się: {e}")
+            
+            # Ostateczne sprawdzenie
+            if not clipboard_text or not clipboard_text.strip() or clipboard_text == old_clipboard:
                 self.after(0, lambda: self.update_status("⚠️ Brak zaznaczonego tekstu"))
-                # Pokaż message box
+                logging.warning("Nie udało się skopiować zaznaczonego tekstu żadną metodą")
+                # Pokaż message box z lepszymi instrukcjami
                 self.after(0, lambda: messagebox.showinfo(
-                    "Pusty schowek",
-                    "Zaznacz tekst i spróbuj ponownie",
+                    "Nie skopiowano tekstu",
+                    "1. Zaznacz tekst w dowolnej aplikacji\n"
+                    "2. Upewnij się, że tekst jest faktycznie zaznaczony\n" 
+                    "3. Spróbuj ponownie Ctrl+Shift+C\n\n"
+                    "Lub skopiuj tekst ręcznie (Ctrl+C) i użyj aplikacji.",
                     parent=None
                 ))
                 return
@@ -872,6 +945,31 @@ class MultiAPICorrector(ctk.CTk):
                 )
             except:
                 pass
+    
+    def paste_and_process(self):
+        """Wkleja tekst ze schowka i przetwarza bez hotkey."""
+        try:
+            clipboard_text = pyperclip.paste()
+            if not clipboard_text or not clipboard_text.strip():
+                messagebox.showinfo(
+                    "Pusty schowek", 
+                    "Skopiuj tekst do schowka (Ctrl+C) i spróbuj ponownie.",
+                    parent=self
+                )
+                return
+            
+            logging.info(f"Przetwarzanie tekstu ze schowka: {len(clipboard_text)} znaków")
+            self.original_text = clipboard_text
+            self.show_window()  # Pokaż okno
+            self.process_text_multi_api(clipboard_text)
+            
+        except Exception as e:
+            logging.error(f"Błąd wklejania tekstu: {e}")
+            messagebox.showerror(
+                "Błąd", 
+                f"Nie można pobrać tekstu ze schowka: {e}",
+                parent=self
+            )
     
     def show_window(self):
         """Pokazuje okno z tray."""
