@@ -6,7 +6,7 @@ import sys # Dodano import sys
 import ssl
 import httpx
 from httpx import HTTPError, TimeoutException
-from PyQt6.QtWidgets import QMessageBox
+# PyQt6 removed - using CustomTkinter GUI now
 from gui.prompts import get_system_prompt
 from .base_client import DEFAULT_TIMEOUT, QUICK_TIMEOUT, CONNECTION_TIMEOUT, DEFAULT_RETRIES, APITimeoutError
 
@@ -34,20 +34,9 @@ except ImportError:
 # from .base_client import APIConnectionError, APIResponseError, DEFAULT_TIMEOUT
 
 def show_connection_error():
-    msg = QMessageBox()
-    msg.setIcon(QMessageBox.Icon.Critical)
-    msg.setWindowTitle("Błąd połączenia")
-    msg.setText("Nie można nawiązać połączenia z serwerem API")
-    msg.setInformativeText("Możliwe przyczyny:\n"
-                          "1. Brak połączenia z internetem\n"
-                          "2. Firewall lub antywirus blokuje połączenie\n"
-                          "3. Brak uprawnień administratora\n\n"
-                          "Rozwiązania:\n"
-                          "1. Uruchom program jako administrator\n"
-                          "2. Dodaj wyjątek w Firewallu Windows\n"
-                          "3. Sprawdź ustawienia antywirusa")
-    msg.setStandardButtons(QMessageBox.StandardButton.Ok)
-    msg.show()
+    """Log connection error - GUI now handled by main application"""
+    logger.error("Connection error - cannot connect to API server")
+    logger.error("Possible causes: 1) No internet 2) Firewall blocking 3) API server down")
 
 def handle_api_error(e):
     if isinstance(e, (httpx.ConnectError, httpx.ConnectTimeout, openai.APIConnectionError)):
