@@ -29,25 +29,39 @@ jobs:
       run: |
         pip install pyinstaller>=5.0.0
         
-    - name: Build Windows executable (Multi-API Corrector)
+    - name: Build Windows executable (Release)
       run: |
         pyinstaller popraw_tekst_corrector.spec --noconfirm
         
-    - name: Test executable exists
+    - name: Build Windows executable (Debug)
+      run: |
+        pyinstaller popraw_tekst_debug.spec --noconfirm
+        
+    - name: Test executables exist
       run: |
         if (Test-Path "dist/popraw_tekst_corrector.exe") {
-          Write-Host "✅ Executable created successfully"
+          Write-Host "✅ Release executable created successfully"
           Get-Item "dist/popraw_tekst_corrector.exe" | Select-Object Name, Length, LastWriteTime
         } else {
-          Write-Host "❌ Executable not found"
+          Write-Host "❌ Release executable not found"
           exit 1
         }
         
-    - name: Upload Windows executable
+        if (Test-Path "dist/popraw_tekst_debug.exe") {
+          Write-Host "✅ Debug executable created successfully"  
+          Get-Item "dist/popraw_tekst_debug.exe" | Select-Object Name, Length, LastWriteTime
+        } else {
+          Write-Host "❌ Debug executable not found"
+          exit 1
+        }
+        
+    - name: Upload Windows executables
       uses: actions/upload-artifact@v4
       with:
         name: popraw-tekst-corrector-windows
-        path: dist/popraw_tekst_corrector.exe
+        path: |
+          dist/popraw_tekst_corrector.exe
+          dist/popraw_tekst_debug.exe
         retention-days: 30
         
     - name: Upload build logs (if failed)

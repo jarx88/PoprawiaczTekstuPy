@@ -45,18 +45,32 @@ class AnimatedGIF(tk.Label):
         self.current_frame = 0
         self.is_running = False
         
-        # Load GIF
-        self.gif = Image.open(path)
-        
-        # Extract frames
         try:
-            while True:
-                frame = self.gif.copy()
-                frame = frame.resize((48, 48), Image.Resampling.LANCZOS)
-                self.frames.append(ImageTk.PhotoImage(frame))
-                self.gif.seek(len(self.frames))
-        except EOFError:
-            pass
+            # Load GIF
+            self.gif = Image.open(path)
+            
+            # Extract frames
+            try:
+                while True:
+                    frame = self.gif.copy()
+                    
+                    # Resize with fallback for older PIL versions
+                    try:
+                        frame = frame.resize((48, 48), Image.Resampling.LANCZOS)
+                    except AttributeError:
+                        # Fallback for older PIL versions
+                        frame = frame.resize((48, 48), Image.LANCZOS)
+                    
+                    self.frames.append(ImageTk.PhotoImage(frame))
+                    self.gif.seek(len(self.frames))
+            except EOFError:
+                pass
+                
+        except Exception as e:
+            logging.error(f"Błąd ładowania GIF {path}: {e}")
+            # Create a simple colored square as fallback
+            fallback_image = Image.new('RGB', (48, 48), color='blue')
+            self.frames = [ImageTk.PhotoImage(fallback_image)]
         
         super().__init__(master, image=self.frames[0] if self.frames else None)
         
@@ -891,21 +905,42 @@ def quit_app():
 def setup_logging():
     """Konfiguruje logging."""
     try:
-        log_dir = os.path.join(os.path.expanduser("~"), "PoprawiaczTekstu_logs")
-        os.makedirs(log_dir, exist_ok=True)
+        # Try home directory first
+        try:
+            log_dir = os.path.join(os.path.expanduser("~"), "PoprawiaczTekstu_logs")
+            os.makedirs(log_dir, exist_ok=True)
+        except (OSError, PermissionError):
+            # Fallback to temp directory
+            import tempfile
+            log_dir = os.path.join(tempfile.gettempdir(), "PoprawiaczTekstu_logs")
+            os.makedirs(log_dir, exist_ok=True)
+            
         log_file = os.path.join(log_dir, f"app_corrector_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log")
+        
+        # Console only logging as fallback
+        handlers = [logging.StreamHandler()]
+        
+        # Add file handler if possible
+        try:
+            handlers.append(logging.FileHandler(log_file, encoding='utf-8'))
+        except (OSError, PermissionError):
+            print(f"Warning: Cannot create log file, using console only")
         
         logging.basicConfig(
             level=logging.INFO,
             format='%(asctime)s - %(levelname)s - %(message)s',
-            handlers=[
-                logging.FileHandler(log_file, encoding='utf-8'),
-                logging.StreamHandler()
-            ]
+            handlers=handlers
         )
-        logging.info(f"Multi-API Corrector logs: {log_file}")
+        
+        if len(handlers) > 1:
+            logging.info(f"Multi-API Corrector logs: {log_file}")
+        else:
+            logging.info("Multi-API Corrector - console logging only")
+            
     except Exception as e:
-        print(f"Logging error: {e}")
+        print(f"Logging setup failed: {e}")
+        # Minimal console logging as last resort
+        logging.basicConfig(level=logging.INFO, format='%(message)s')
 
 def setup_global_hotkey(app):
     """Konfiguruje globalny hotkey Ctrl+Shift+C."""

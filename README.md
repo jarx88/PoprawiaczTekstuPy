@@ -1,32 +1,35 @@
 # PoprawiaczTekstuPy
 
-Nowoczesna aplikacja do automatycznej korekty tekstu z wykorzystaniem AI. Obsługuje OpenAI, Anthropic, Gemini i DeepSeek APIs.
+Nowoczesna aplikacja do automatycznej korekty tekstu z wykorzystaniem AI. Aplikacja wysyła tekst jednocześnie do 4 AI providers (OpenAI, Anthropic, Gemini, DeepSeek) i pozwala wybrać najlepszą korektę.
 
-![Build Status](https://github.com/YOUR_USERNAME/PoprawiaczTekstuPy/workflows/Build%20Windows%20EXE/badge.svg)
+![Build Status](https://github.com/jarx88/PoprawiaczTekstuPy/workflows/Build%20Windows%20EXE/badge.svg)
 
 ## ✨ Funkcje
 
-- 🎨 **Nowoczesny interfejs** - CustomTkinter z dark/light mode
-- ⚡ **Globalny hotkey** - Ctrl+Shift+C do szybkiej korekty
-- 🔄 **System tray** - aplikacja w zasobniku systemowym
-- 🤖 **Wielokrotne AI** - OpenAI, Anthropic, Gemini, DeepSeek
-- 📋 **Schowek** - automatyczna korekta tekstu ze schowka
-- 🔧 **Łatwe ustawienia** - graficzny interfejs konfiguracji
+- 🎨 **Nowoczesny interfejs** - CustomTkinter z 4-panelowym layoutem
+- ⚡ **Globalny hotkey** - Ctrl+Shift+C automatycznie kopiuje zaznaczony tekst
+- 🔄 **System tray** - aplikacja w zasobniku systemowym z powiadomieniami
+- 🤖 **4 AI jednocześnie** - OpenAI, Anthropic, Gemini, DeepSeek w osobnych panelach
+- 📋 **Auto-paste** - Ctrl+V automatycznie wkleja wybraną korektę
+- 🎬 **Animacje** - GIF loadery podczas przetwarzania
+- ⚙️ **Anulowanie** - nowy hotkey anuluje poprzednie zapytania
+- 🎨 **Kolorowe panele** - każdy AI ma swój unikalny kolor
 
 ## 🚀 Instalacja
 
 ### Option 1: Pobierz gotowy executable
-1. Idź do [Releases](https://github.com/YOUR_USERNAME/PoprawiaczTekstuPy/releases)
-2. Pobierz najnowszą wersję dla swojego systemu:
-   - **Windows**: `popraw_tekst_modern.exe`
-   - **Linux**: `popraw_tekst_modern_linux`
+1. Idź do [Actions](https://github.com/jarx88/PoprawiaczTekstuPy/actions)
+2. Wybierz najnowszy successful build
+3. Pobierz artifact dla swojego systemu:
+   - **Windows**: `popraw-tekst-corrector-windows`
+   - **Linux**: `popraw-tekst-modern-linux`
 
 ### Option 2: Uruchom z kodu źródłowego
 ```bash
-git clone https://github.com/YOUR_USERNAME/PoprawiaczTekstuPy.git
+git clone https://github.com/jarx88/PoprawiaczTekstuPy.git
 cd PoprawiaczTekstuPy
 pip install -r requirements.txt
-python main_modern.py
+python main_corrector.py
 ```
 
 ## ⚙️ Konfiguracja
@@ -41,25 +44,28 @@ python main_modern.py
 
 ## 🎯 Użycie
 
-### Globalny skrót klawiszowy
-1. Skopiuj tekst do schowka (Ctrl+C)
-2. Naciśnij **Ctrl+Shift+C**
-3. Poprawiony tekst zastąpi zawartość schowka
+### Workflow aplikacji
+1. **Zaznacz tekst** w dowolnej aplikacji
+2. **Naciśnij Ctrl+Shift+C** - aplikacja automatycznie skopiuje tekst
+3. **Obserwuj 4 panele** - każdy AI przetwarza tekst z animowanym loaderem
+4. **Kliknij najlepszy wynik** - zostanie podświetlony na zielono
+5. **Ctrl+V** - aplikacja automatycznie wklei wybraną korektę
 
-### Interfejs graficzny
-1. Wklej tekst w górnym polu
-2. Kliknij **Popraw tekst**
-3. Skopiuj wynik z dolnego pola
+### Panele AI
+- 🟢 **OpenAI** (zielony) - GPT-4 models
+- 🟠 **Anthropic** (pomarańczowy) - Claude models  
+- 🔵 **Gemini** (niebieski) - Google AI
+- 🟣 **DeepSeek** (fioletowy) - DeepSeek Chat
 
 ## 🔧 Development
 
-### Budowanie lokalnie (Linux)
+### Budowanie lokalnie
 ```bash
-# Linux version
-./build-linux.sh
+# CustomTkinter version (aktualny)
+pyinstaller popraw_tekst_corrector.spec
 
-# Test Wine build (problematyczny)
-./build-modern.sh
+# Linux version  
+pyinstaller popraw_tekst_linux.spec
 ```
 
 ### GitHub Actions
@@ -70,11 +76,14 @@ Projekt używa GitHub Actions do automatycznego budowania:
 
 ## 📦 Technologie
 
-- **GUI**: CustomTkinter (nowoczesny design)
-- **System Tray**: pystray
-- **Hotkeys**: pynput (thread-safe)
+- **GUI**: CustomTkinter (nowoczesny design, lekki)
+- **Animacje**: PIL + tkinter (GIF loaders)
+- **System Tray**: pystray z powiadomieniami
+- **Hotkeys**: pynput (thread-safe, globalne)
+- **Clipboard**: pyperclip (multi-platform)
 - **AI APIs**: OpenAI, Anthropic, Gemini, DeepSeek
 - **Build**: PyInstaller + GitHub Actions
+- **Session Management**: threading z cancel flags
 
 ## 🐛 Rozwiązywanie problemów
 
@@ -88,12 +97,15 @@ Projekt używa GitHub Actions do automatycznego budowania:
 
 ## 📝 Historia zmian
 
-### v2.0.0 (Aktualny)
-- ✅ Migracja z PyQt6 na CustomTkinter
-- ✅ Nowoczesny design z dark/light mode
-- ✅ Lepsza wydajność i stabilność
-- ✅ GitHub Actions dla automatycznych builds
-- ✅ System tray integration
+### v2.0.0 (Aktualny - CustomTkinter)
+- ✅ **Pełna migracja** z PyQt6 na CustomTkinter
+- ✅ **4-panelowy layout** z jednoczesnym przetwarzaniem
+- ✅ **Animowane loadery** GIF dla każdego API
+- ✅ **Session management** z anulowaniem poprzednich zapytań
+- ✅ **Auto-paste workflow** - Ctrl+Shift+C → wybór → Ctrl+V
+- ✅ **Kolorowe panele** - unikalne kolory dla każdego AI
+- ✅ **GitHub Actions** - automatyczne Windows builds
+- ✅ **System tray** z powiadomieniami pystray
 
 ### v1.0.0
 - ✅ Podstawowa funkcjonalność z PyQt6
@@ -115,10 +127,16 @@ Projekt używa GitHub Actions do automatycznego budowania:
 ## ❓ FAQ
 
 **Q: Dlaczego Wine build nie działa?**
-A: Wine ma problemy z shared WSL/Windows venv. Użyj GitHub Actions do budowania Windows exe.
+A: Wine nie może wykonać Windows Python z współdzielonego WSL/Windows venv. GitHub Actions budują natywnie na Windows.
+
+**Q: Dlaczego aplikacja pokazuje 4 panele zamiast jednego wyniku?**
+A: To jest workflow aplikacji - porównujesz wyniki z 4 AI jednocześnie i wybierasz najlepszy.
+
+**Q: Jak anulować przetwarzanie?**
+A: Naciśnij ponownie Ctrl+Shift+C - anuluje poprzednie zapytania i rozpoczyna nowe.
 
 **Q: Jak dodać nowy AI provider?**
-A: Dodaj klienta w `api_clients/` i zaktualizuj `main_modern.py`.
+A: Dodaj klienta w `api_clients/` i zaktualizuj `main_corrector.py`.
 
 **Q: Czy mogę używać bez internetu?**
 A: Nie, aplikacja wymaga połączenia z internetem dla AI APIs.

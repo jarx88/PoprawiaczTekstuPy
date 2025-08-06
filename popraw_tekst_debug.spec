@@ -1,4 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
+# DEBUG VERSION - shows console window with errors
 
 block_cipher = None
 
@@ -42,7 +43,8 @@ a = Analysis(
         'threading',
         'tkinter',
         'tkinter.messagebox',
-        'configparser'
+        'configparser',
+        'tempfile'
     ],
     hookspath=[],
     hooksconfig={},
@@ -72,14 +74,14 @@ exe = EXE(
     a.zipfiles,
     a.datas,
     [],
-    name='popraw_tekst_corrector',
-    debug=False,
+    name='popraw_tekst_debug',
+    debug=True,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    upx=False,
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=True,
+    console=True,  # CONSOLE = TRUE for debug
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
