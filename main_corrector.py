@@ -596,38 +596,30 @@ class MultiAPICorrector(ctk.CTk):
             
             # Jeśli już przetwarza - anuluj poprzednie
             if self.processing:
-                logging.info("Hotkey: Anulowanie poprzedniego przetwarzania...")
+                logging.info("Hotkey: Quick cancel poprzedniego przetwarzania...")
                 self.cancel_all_processing()
-                time.sleep(0.2)  # Daj czas na anulowanie
+                time.sleep(0.1)  # Zmniejszony delay
             
-            # Zapisz obecny schowek
-            old_clipboard = ""
-            try:
-                old_clipboard = pyperclip.paste()
-                logging.debug(f"Obecny schowek: {len(old_clipboard) if old_clipboard else 0} znaków")
-            except:
-                pass
-            
-            # KLUCZOWE: Kopiowanie W TLE - okno NADAL UKRYTE!
+            # KLUCZOWE: Szybkie kopiowanie W TLE - okno NADAL UKRYTE!
             # Oryginalna aplikacja ma focus, zaznaczenie nie zostanie utracone
-            logging.info("🔄 Kopiowanie w tle - okno ukryte, focus w oryginalnej app")
+            logging.info("🚀 Quick clipboard copy - okno ukryte, focus w oryginalnej app")
             clipboard_text = ""
             
             try:
-                clipboard_text = self._robust_clipboard_copy(old_clipboard)
+                clipboard_text = self._robust_clipboard_copy()
                         
             except Exception as e:
                 logging.warning(f"Background clipboard copy failed: {e}")
             
-            # Sprawdzenie czy kopiowanie się powiodło
-            if not clipboard_text or not clipboard_text.strip() or clipboard_text == old_clipboard:
+            # Uproszczone sprawdzenie - nie sprawdzamy czy ten sam tekst!
+            if not clipboard_text or not clipboard_text.strip():
                 logging.warning("Clipboard copy failed - pokażę GUI z błędem")
                 
                 # FAILURE: Pokaż GUI z komunikatem o błędzie
                 self._show_gui_with_error()
                 return
             
-            # SUCCESS: Tekst skopiowany! Teraz pokaż GUI i rozpocznij przetwarzanie
+            # SUCCESS: Mamy tekst! Pokaż GUI i rozpocznij przetwarzanie
             logging.info(f"✅ Clipboard copy SUCCESS - {len(clipboard_text)} znaków")
             self.original_text = clipboard_text
             
@@ -768,68 +760,41 @@ class MultiAPICorrector(ctk.CTk):
             else:
                 self._update_api_result(idx, f"❌ Brak klucza API dla {api_name}", True, 0, session_id)
     
-    def _robust_clipboard_copy(self, old_clipboard, max_retries=3):
-        """Robust clipboard copy z retry mechanism i proper timing."""
+    def _robust_clipboard_copy(self, max_retries=2):
+        """Szybki clipboard copy - maksymalnie uproszczony."""
         
         for attempt in range(max_retries):
             try:
-                logging.debug(f"Próba kopiowania {attempt + 1}/{max_retries}")
+                logging.debug(f"Quick copy {attempt + 1}/{max_retries}")
                 
-                # Clear clipboard first to detect changes
-                pyperclip.copy("")
-                time.sleep(0.05)  # Krótki delay
-                
-                # Method 1: Pynput
+                # Pynput z minimalnym delay
                 from pynput.keyboard import Key, Controller
                 kb_controller = Controller()
                 
                 kb_controller.press(Key.ctrl)
                 kb_controller.press('c')
-                time.sleep(0.05)  # Trochę dłuższy hold
+                time.sleep(0.02)  # Minimalny hold
                 kb_controller.release('c')
                 kb_controller.release(Key.ctrl)
                 
-                # Retry checking clipboard multiple times
-                for check in range(5):  # Max 5 checków
-                    time.sleep(0.05 * (check + 1))  # Progresywny delay
+                # Krótkie sprawdzenie - max 2 razy
+                for check in range(2):  
+                    time.sleep(0.02)  # Bardzo krótki delay
                     new_clipboard = pyperclip.paste()
                     
-                    if new_clipboard and new_clipboard.strip() and new_clipboard != old_clipboard:
-                        logging.info(f"✅ Pynput copy success on attempt {attempt + 1}, check {check + 1}")
+                    if new_clipboard and new_clipboard.strip():
+                        logging.info(f"✅ Copy success {attempt + 1}.{check + 1}")
                         return new_clipboard
                 
-                # Method 2: Win32API fallback
-                if attempt == 1:  # Try on second attempt
-                    try:
-                        import win32api
-                        import win32con
-                        logging.debug("Trying Win32API fallback")
-                        
-                        pyperclip.copy("")  # Clear again
-                        time.sleep(0.05)
-                        
-                        win32api.keybd_event(win32con.VK_CONTROL, 0, 0, 0)
-                        win32api.keybd_event(ord('C'), 0, 0, 0)
-                        time.sleep(0.1)  # Longer hold for Win32
-                        win32api.keybd_event(ord('C'), 0, win32con.KEYEVENTF_KEYUP, 0)
-                        win32api.keybd_event(win32con.VK_CONTROL, 0, win32con.KEYEVENTF_KEYUP, 0)
-                        
-                        # Check multiple times
-                        for check in range(3):
-                            time.sleep(0.1)
-                            new_clipboard = pyperclip.paste()
-                            if new_clipboard and new_clipboard.strip() and new_clipboard != old_clipboard:
-                                logging.info(f"✅ Win32API copy success on attempt {attempt + 1}")
-                                return new_clipboard
-                    except:
-                        pass
-                
-                logging.warning(f"Attempt {attempt + 1} failed - retrying")
-                time.sleep(0.2)  # Delay before retry
+                # Jeśli pierwsze nie powiodło się, krótki retry
+                if attempt < max_retries - 1:
+                    logging.warning(f"Attempt {attempt + 1} failed - quick retry")
+                    time.sleep(0.05)  # Minimalny delay przed retry
                 
             except Exception as e:
                 logging.warning(f"Copy attempt {attempt + 1} failed: {e}")
-                time.sleep(0.2)
+                if attempt < max_retries - 1:
+                    time.sleep(0.05)  # Minimalny delay
         
         logging.error("All clipboard copy attempts failed")
         return ""
