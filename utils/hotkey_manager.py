@@ -170,7 +170,7 @@ class ThreadSafeHotkeyProcessor:
         """
         alternatives = [
             ('<ctrl>+<shift>+<alt>+c', "Ctrl+Shift+Alt+C"),
-            ('<ctrl>+<alt>+c', "Ctrl+Alt+C"), 
+            ('<ctrl>+<shift>+v', "Ctrl+Shift+V"), 
             ('<shift>+<alt>+c', "Shift+Alt+C")
         ]
         

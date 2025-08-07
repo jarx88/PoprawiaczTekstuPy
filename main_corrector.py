@@ -270,7 +270,7 @@ class MultiAPICorrector(ctk.CTk):
         status_font_size = max(12, int(16 * self.scale_factor))
         self.status_label = ctk.CTkLabel(
             top_frame,
-            text="⌨️ Ctrl+Shift+C - zaznacz tekst i naciśnij aby poprawić",
+            text="⌨️ Ctrl+Shift+C - zaznacz tekst i od razu naciśnij (natychmiastowo!)",
             font=ctk.CTkFont(size=status_font_size, weight="bold")
         )
         self.status_label.pack(pady=(10, 5))
@@ -533,23 +533,13 @@ class MultiAPICorrector(ctk.CTk):
         self.update_idletasks()
     
     def handle_hotkey_event(self):
-        """Obsługuje Ctrl+Shift+C - pobiera zaznaczony tekst i przetwarza."""
+        """Obsługuje Ctrl+Shift+C - natychmiastowo kopiuje zaznaczony tekst i przetwarza."""
         try:
             # Jeśli już przetwarza - anuluj poprzednie
             if self.processing:
                 logging.info("Hotkey: Anulowanie poprzedniego przetwarzania...")
                 self.cancel_all_processing()
                 time.sleep(0.2)  # Daj czas na anulowanie
-            
-            # Sprawdź informacje o aktywnym oknie
-            active_window_info = ""
-            try:
-                import win32gui
-                active_window = win32gui.GetForegroundWindow()
-                active_window_info = win32gui.GetWindowText(active_window)
-                logging.debug(f"Aktywne okno: {active_window_info}")
-            except Exception as e:
-                logging.debug(f"Nie można pobrać info o oknie: {e}")
             
             # Zapisz obecny schowek
             old_clipboard = ""
@@ -559,116 +549,72 @@ class MultiAPICorrector(ctk.CTk):
             except:
                 pass
             
-            # Wielokrotne próby kopiowania tekstu różnymi metodami
+            # NATYCHMIASTOWE kopiowanie - bez opóźnień!
+            # Ctrl+Shift+C może powodować utratę zaznaczenia, więc robimy to błyskawicznie
             clipboard_text = ""
-            max_attempts = 3
             
-            for attempt in range(max_attempts):
-                logging.debug(f"Próba kopiowania {attempt + 1}/{max_attempts}")
+            try:
+                logging.debug("NATYCHMIASTOWE kopiowanie metodą pynput")
+                from pynput.keyboard import Key, Controller
+                kb_controller = Controller()
                 
-                # Metoda 1: pynput (najbardziej niezawodna)
-                if not clipboard_text or clipboard_text == old_clipboard:
-                    try:
-                        logging.debug("Kopiowanie metodą pynput")
-                        from pynput.keyboard import Key, Controller
-                        kb_controller = Controller()
-                        
-                        # Krótkie opóźnienie przed akcją
-                        time.sleep(0.05)
-                        
-                        # Wysyłanie Ctrl+C
-                        kb_controller.press(Key.ctrl)
-                        kb_controller.press('c')
-                        time.sleep(0.02)  # Krótkie hold
-                        kb_controller.release('c')
-                        kb_controller.release(Key.ctrl)
-                        
-                        # Czekaj na skopiowanie - progresywnie dłużej
-                        wait_time = 0.2 + (attempt * 0.1)  # 0.2s, 0.3s, 0.4s
-                        time.sleep(wait_time)
-                        
-                        new_clipboard = pyperclip.paste()
-                        if new_clipboard and new_clipboard.strip() and new_clipboard != old_clipboard:
-                            clipboard_text = new_clipboard
-                            logging.info(f"Kopiowanie udane metodą pynput (próba {attempt + 1})")
-                            break
-                            
-                    except Exception as e:
-                        logging.warning(f"Metoda pynput próba {attempt + 1}: {e}")
+                # BEZ opóźnienia - od razu kopiuj!
+                kb_controller.press(Key.ctrl)
+                kb_controller.press('c')
+                time.sleep(0.01)  # Minimalny hold
+                kb_controller.release('c')
+                kb_controller.release(Key.ctrl)
                 
-                # Metoda 2: Windows SendKeys
-                if not clipboard_text or clipboard_text == old_clipboard:
+                # Bardzo krótkie czekanie na clipboard
+                time.sleep(0.1)
+                
+                new_clipboard = pyperclip.paste()
+                if new_clipboard and new_clipboard.strip() and new_clipboard != old_clipboard:
+                    clipboard_text = new_clipboard
+                    logging.info("NATYCHMIASTOWE kopiowanie udane!")
+                else:
+                    # Fallback - próba z SendKeys
                     try:
                         import win32api
                         import win32con
-                        logging.debug("Kopiowanie metodą SendKeys")
+                        logging.debug("Fallback - SendKeys")
                         
-                        time.sleep(0.05)
-                        
-                        # Wyślij Ctrl+C z prawidłowym timing
                         win32api.keybd_event(win32con.VK_CONTROL, 0, 0, 0)
                         win32api.keybd_event(ord('C'), 0, 0, 0)
-                        time.sleep(0.02)  # Hold keys
+                        time.sleep(0.01)
                         win32api.keybd_event(ord('C'), 0, win32con.KEYEVENTF_KEYUP, 0)
                         win32api.keybd_event(win32con.VK_CONTROL, 0, win32con.KEYEVENTF_KEYUP, 0)
                         
-                        wait_time = 0.2 + (attempt * 0.1)
-                        time.sleep(wait_time)
-                        
+                        time.sleep(0.1)
                         new_clipboard = pyperclip.paste()
                         if new_clipboard and new_clipboard.strip() and new_clipboard != old_clipboard:
                             clipboard_text = new_clipboard
-                            logging.info(f"Kopiowanie udane metodą SendKeys (próba {attempt + 1})")
-                            break
+                            logging.info("Fallback kopiowanie udane!")
                             
-                    except Exception as e:
-                        logging.warning(f"Metoda SendKeys próba {attempt + 1}: {e}")
-                
-                # Metoda 3: keyboard library (fallback)
-                if not clipboard_text or clipboard_text == old_clipboard:
-                    try:
-                        logging.debug("Kopiowanie metodą keyboard.send")
-                        time.sleep(0.05)
-                        keyboard.send('ctrl+c')
+                    except Exception as e2:
+                        logging.warning(f"Fallback SendKeys failed: {e2}")
                         
-                        wait_time = 0.2 + (attempt * 0.1)
-                        time.sleep(wait_time)
-                        
-                        new_clipboard = pyperclip.paste()
-                        if new_clipboard and new_clipboard.strip() and new_clipboard != old_clipboard:
-                            clipboard_text = new_clipboard
-                            logging.info(f"Kopiowanie udane metodą keyboard.send (próba {attempt + 1})")
-                            break
-                            
-                    except Exception as e:
-                        logging.warning(f"Metoda keyboard.send próba {attempt + 1}: {e}")
-                
-                # Jeśli wszystkie metody zawiodły w tej próbie, czekaj przed następną
-                if attempt < max_attempts - 1:
-                    time.sleep(0.1)
+            except Exception as e:
+                logging.warning(f"NATYCHMIASTOWE kopiowanie failed: {e}")
             
             # Ostateczne sprawdzenie
             if not clipboard_text or not clipboard_text.strip() or clipboard_text == old_clipboard:
                 self.after(0, lambda: self.update_status("⚠️ Brak zaznaczonego tekstu"))
-                logging.warning(f"Nie udało się skopiować tekstu. Aktywne okno: {active_window_info}")
+                logging.warning("NATYCHMIASTOWE kopiowanie nie powiodło się")
                 
-                # Sprawdź czy to może być problematyczna aplikacja
-                problematic_apps = ["cmd.exe", "powershell", "terminal", "console", "putty"]
-                app_warning = ""
-                if any(app.lower() in active_window_info.lower() for app in problematic_apps):
-                    app_warning = f"\n⚠️ Aplikacja '{active_window_info}' może blokować kopiowanie."
-                
-                # Pokaż message box z lepszymi instrukcjami
+                # Pokaż message box z instrukcjami natychmiastowego kopiowania
                 self.after(0, lambda: messagebox.showinfo(
                     "Nie skopiowano tekstu",
-                    f"Nie udało się automatycznie skopiować zaznaczonego tekstu.{app_warning}\n\n"
-                    "🔧 Rozwiązania:\n"
+                    "Nie udało się natychmiastowo skopiować zaznaczonego tekstu.\n\n"
+                    "💡 WAŻNE: Ctrl+Shift+C musi być naciśnięte NATYCHMIAST po zaznaczeniu!\n\n"
+                    "🎯 Prawidłowy workflow:\n"
+                    "1. Zaznacz tekst myszką/klawiaturą\n"
+                    "2. OD RAZU naciśnij Ctrl+Shift+C (bez przerwy!)\n"
+                    "3. Nie klikaj gdzie indziej między zaznaczeniem a hotkey\n\n"
+                    "🔧 Alternatywne rozwiązanie:\n"
                     "1. Zaznacz tekst i skopiuj ręcznie (Ctrl+C)\n"
                     "2. Następnie użyj przycisku '📋 Wklej tekst'\n\n"
-                    "🎯 Lub spróbuj ponownie:\n"
-                    "1. Upewnij się, że tekst jest zaznaczony\n"
-                    "2. Użyj Ctrl+Shift+C ponownie\n\n"
-                    "📱 Aplikacja działa najlepiej z: Notatnik, Word, przeglądarki, edytory tekstu",
+                    "⚡ Klucz to SZYBKOŚĆ - zaznacz i od razu Ctrl+Shift+C!",
                     parent=None
                 ))
                 return
@@ -1439,7 +1385,7 @@ def create_tray_icon(app):
         tray_icon = pystray.Icon(
             "PoprawiaczTekstuPy",
             image,
-            "PoprawiaczTekstuPy\nCtrl+Shift+C - popraw tekst",
+            "PoprawiaczTekstuPy\nZaznacz tekst → OD RAZU Ctrl+Shift+C",
             menu=menu
         )
         
@@ -1557,7 +1503,7 @@ def setup_global_hotkey(app):
         
         if success:
             logging.info("Globalny skrót skonfigurowany pomyślnie")
-            app.after(0, lambda: app.update_status("✅ Ctrl+Shift+C aktywny - zaznacz tekst i naciśnij"))
+            app.after(0, lambda: app.update_status("✅ Ctrl+Shift+C aktywny - zaznacz tekst i OD RAZU naciśnij!"))
         else:
             logging.warning("Nie udało się skonfigurować hotkey")
             app.after(0, lambda: app.update_status("⚠️ Hotkey niedostępny - skonfiguruj ręcznie"))
