@@ -10,6 +10,10 @@ on:
 jobs:
   build-windows:
     runs-on: windows-latest
+    permissions:
+      contents: read
+      attestations: write
+      id-token: write
     
     steps:
     - name: Checkout code
@@ -34,7 +38,10 @@ jobs:
         pyinstaller popraw_tekst_corrector.spec --noconfirm
         
     - name: Sign executable (optional)
-      if: ${{ secrets.CODE_SIGNING_CERT != '' && secrets.CODE_SIGNING_PASSWORD != '' }}
+      if: ${{ secrets.CODE_SIGNING_CERT != '' }}
+      env:
+        CODE_SIGNING_CERT: ${{ secrets.CODE_SIGNING_CERT }}
+        CODE_SIGNING_PASSWORD: ${{ secrets.CODE_SIGNING_PASSWORD }}
       run: |
         # Decode certificate from base64
         $certBytes = [Convert]::FromBase64String($env:CODE_SIGNING_CERT)
@@ -47,9 +54,6 @@ jobs:
         Remove-Item cert.p12
         
         Write-Host "✅ Executable signed successfully"
-      env:
-        CODE_SIGNING_CERT: ${{ secrets.CODE_SIGNING_CERT }}
-        CODE_SIGNING_PASSWORD: ${{ secrets.CODE_SIGNING_PASSWORD }}
         
     - name: Test executable exists
       run: |
