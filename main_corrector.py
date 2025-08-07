@@ -621,9 +621,14 @@ class MultiAPICorrector(ctk.CTk):
             
             self.original_text = clipboard_text
             
-            # Pokaż okno i przetwórz
+            # Przygotuj UI przed pokazaniem (pre-render)
+            self.update_status("📝 Przetwarzanie tekstu...")
+            self.update_idletasks()  # Pre-render wszystkich elementów
+            
+            # Teraz pokaż okno - będzie już wyrenderowane
             self.after(0, self.show_window)
-            self.after(100, lambda: self.process_text_multi_api(clipboard_text))
+            # Krótkie opóźnienie przed startem przetwarzania dla płynności
+            self.after(50, lambda: self.process_text_multi_api(clipboard_text))
             
         except Exception as e:
             logging.error(f"Błąd obsługi hotkey: {e}")
@@ -643,6 +648,9 @@ class MultiAPICorrector(ctk.CTk):
         
         # Update session info
         self.session_label.configure(text=f"📝 Sesja: {self.current_session_id}")
+        
+        # Pre-render UI przed zmianami
+        self.update_idletasks()
         
         # Przygotuj panele
         for i in range(4):
@@ -970,10 +978,16 @@ class MultiAPICorrector(ctk.CTk):
             )
     
     def show_window(self):
-        """Pokazuje okno z tray."""
+        """Pokazuje okno z tray z pre-renderowaniem."""
+        # Pre-render wszystkich widgetów przed pokazaniem
+        self.update_idletasks()
+        
+        # Teraz pokaż okno - będzie płynnie
         self.deiconify()
         self.lift()
         self.focus_force()
+        
+        # Topmost tylko na chwilę
         self.attributes('-topmost', True)
         self.after(100, lambda: self.attributes('-topmost', False))
 
@@ -1373,7 +1387,7 @@ def create_tray_icon(app):
 
         # Tray menu
         menu = pystray.Menu(
-            pystray.MenuItem("📱 Pokaż aplikację", lambda: app.after(0, app.show_window)),
+            pystray.MenuItem("📱 Pokaż aplikację", lambda: app.after(0, app.show_window), default=True),  # default=True dla lewego kliku
             pystray.MenuItem("🔽 Minimalizuj", lambda: app.after(0, app.minimize_to_tray)),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("⚙️ Ustawienia", lambda: app.after(0, app.show_settings)),

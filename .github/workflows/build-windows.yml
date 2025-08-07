@@ -33,11 +33,7 @@ jobs:
       run: |
         pyinstaller popraw_tekst_corrector.spec --noconfirm
         
-    - name: Build Windows executable (Debug)
-      run: |
-        pyinstaller popraw_tekst_debug.spec --noconfirm
-        
-    - name: Test executables exist
+    - name: Test executable exists
       run: |
         if (Test-Path "dist/popraw_tekst_corrector.exe") {
           Write-Host "✅ Release executable created successfully"
@@ -47,21 +43,11 @@ jobs:
           exit 1
         }
         
-        if (Test-Path "dist/popraw_tekst_debug.exe") {
-          Write-Host "✅ Debug executable created successfully"  
-          Get-Item "dist/popraw_tekst_debug.exe" | Select-Object Name, Length, LastWriteTime
-        } else {
-          Write-Host "❌ Debug executable not found"
-          exit 1
-        }
-        
-    - name: Upload Windows executables
+    - name: Upload Windows executable
       uses: actions/upload-artifact@v4
       with:
         name: popraw-tekst-corrector-windows
-        path: |
-          dist/popraw_tekst_corrector.exe
-          dist/popraw_tekst_debug.exe
+        path: dist/popraw_tekst_corrector.exe
         retention-days: 30
         
     - name: Upload build logs (if failed)
