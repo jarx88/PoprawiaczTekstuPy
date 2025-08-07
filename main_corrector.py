@@ -40,7 +40,7 @@ def get_assets_dir_path():
         return os.path.join(os.path.dirname(os.path.abspath(__file__)), 'assets')
 
 class AnimatedGIF(tk.Label):
-    """Widget dla animowanego GIF w tkinter."""
+    """Widget dla animowanego GIF z lazy loading - oszczędza RAM."""
     def __init__(self, master, path, scale_factor=1.0):
         self.master = master
         self.path = path
@@ -48,15 +48,37 @@ class AnimatedGIF(tk.Label):
         self.frames = []
         self.current_frame = 0
         self.is_running = False
+        self.frames_loaded = False  # Lazy loading flag
         
+        # Create placeholder image instead of loading GIF immediately
+        gif_size = max(120, int(200 * self.scale_factor))
+        placeholder = Image.new('RGBA', (gif_size, gif_size), (245, 245, 245, 0))  # Transparent placeholder
+        self.placeholder_photo = ImageTk.PhotoImage(placeholder)
+        
+        super().__init__(
+            master, 
+            image=self.placeholder_photo,
+            borderwidth=0,           # Usuń ramkę
+            highlightthickness=0,    # Usuń highlight ring
+            relief='flat',           # Płaski relief
+            bg='#f5f5f5'            # Dopasuj tło do aplikacji
+        )
+    
+    def _load_frames_lazy(self):
+        """Lazy loading GIF frames - ładuje tylko kiedy potrzeba."""
+        if self.frames_loaded:
+            return
+            
         try:
+            logging.debug(f"Lazy loading GIF frames: {self.path}")
+            
             # Load GIF
-            self.gif = Image.open(path)
+            gif = Image.open(self.path)
             
             # Extract frames
             try:
                 while True:
-                    frame = self.gif.copy()
+                    frame = gif.copy()
                     
                     # Convert to RGBA for transparency support
                     if frame.mode != 'RGBA':
@@ -76,34 +98,42 @@ class AnimatedGIF(tk.Label):
                         frame = frame.resize((gif_size, gif_size), Image.LANCZOS)
                     
                     self.frames.append(ImageTk.PhotoImage(frame))
-                    self.gif.seek(len(self.frames))
+                    gif.seek(len(self.frames))
             except EOFError:
                 pass
+            
+            gif.close()  # Close to free memory
+            self.frames_loaded = True
+            logging.info(f"🍾 Lazy loaded {len(self.frames)} GIF frames")
                 
         except Exception as e:
-            logging.error(f"Błąd ładowania GIF {path}: {e}")
+            logging.error(f"Błąd lazy loading GIF {self.path}: {e}")
             # Create a simple colored square as fallback
             gif_size = max(120, int(200 * self.scale_factor))
             fallback_image = Image.new('RGB', (gif_size, gif_size), color='blue')
             self.frames = [ImageTk.PhotoImage(fallback_image)]
-        
-        super().__init__(
-            master, 
-            image=self.frames[0] if self.frames else None,
-            borderwidth=0,           # Usuń ramkę
-            highlightthickness=0,    # Usuń highlight ring
-            relief='flat',           # Płaski relief
-            bg='#f5f5f5'            # Dopasuj tło do aplikacji
-        )
+            self.frames_loaded = True
         
     def start(self):
-        """Start animation."""
+        """Start animation - z lazy loading."""
+        if not self.frames_loaded:
+            self._load_frames_lazy()
+        
         self.is_running = True
         self.animate()
     
     def stop(self):
         """Stop animation."""
         self.is_running = False
+    
+    def cleanup(self):
+        """Cleanup frames to free RAM."""
+        if self.frames:
+            logging.debug(f"Cleaning up {len(self.frames)} GIF frames")
+            self.frames.clear()
+            self.frames_loaded = False
+            # Reset to placeholder
+            self.configure(image=self.placeholder_photo)
     
     def animate(self):
         """Animate frames."""
@@ -433,6 +463,10 @@ class MultiAPICorrector(ctk.CTk):
                     justify="center"
                 )
                 loader.pack(expand=True, fill="both")
+                
+                # Add dummy cleanup method for compatibility
+                loader.cleanup = lambda: None
+                
                 self.api_loaders.append(loader)
             
             # Text widget dla wyniku - ZAWSZE obecny
@@ -582,48 +616,76 @@ class MultiAPICorrector(ctk.CTk):
             clipboard_text = ""
             
             try:
-                logging.debug("NATYCHMIASTOWE kopiowanie metodą pynput")
+                clipboard_text = self._robust_clipboard_copy(old_clipboard)
+                        
+            except Exception as e:
+                logging.warning(f"Robust clipboard copy failed: {e}")
+    
+    def _robust_clipboard_copy(self, old_clipboard, max_retries=3):
+        """Robust clipboard copy z retry mechanism i proper timing."""
+        
+        for attempt in range(max_retries):
+            try:
+                logging.debug(f"Próba kopiowania {attempt + 1}/{max_retries}")
+                
+                # Clear clipboard first to detect changes
+                pyperclip.copy("")
+                time.sleep(0.05)  # Krótki delay
+                
+                # Method 1: Pynput
                 from pynput.keyboard import Key, Controller
                 kb_controller = Controller()
                 
-                # BEZ opóźnienia - od razu kopiuj!
                 kb_controller.press(Key.ctrl)
                 kb_controller.press('c')
-                time.sleep(0.01)  # Minimalny hold
+                time.sleep(0.05)  # Trochę dłuższy hold
                 kb_controller.release('c')
                 kb_controller.release(Key.ctrl)
                 
-                # Bardzo krótkie czekanie na clipboard
-                time.sleep(0.1)
+                # Retry checking clipboard multiple times
+                for check in range(5):  # Max 5 checków
+                    time.sleep(0.05 * (check + 1))  # Progresywny delay
+                    new_clipboard = pyperclip.paste()
+                    
+                    if new_clipboard and new_clipboard.strip() and new_clipboard != old_clipboard:
+                        logging.info(f"✅ Pynput copy success on attempt {attempt + 1}, check {check + 1}")
+                        return new_clipboard
                 
-                new_clipboard = pyperclip.paste()
-                if new_clipboard and new_clipboard.strip() and new_clipboard != old_clipboard:
-                    clipboard_text = new_clipboard
-                    logging.info("NATYCHMIASTOWE kopiowanie udane!")
-                else:
-                    # Fallback - próba z SendKeys
+                # Method 2: Win32API fallback
+                if attempt == 1:  # Try on second attempt
                     try:
                         import win32api
                         import win32con
-                        logging.debug("Fallback - SendKeys")
+                        logging.debug("Trying Win32API fallback")
+                        
+                        pyperclip.copy("")  # Clear again
+                        time.sleep(0.05)
                         
                         win32api.keybd_event(win32con.VK_CONTROL, 0, 0, 0)
                         win32api.keybd_event(ord('C'), 0, 0, 0)
-                        time.sleep(0.01)
+                        time.sleep(0.1)  # Longer hold for Win32
                         win32api.keybd_event(ord('C'), 0, win32con.KEYEVENTF_KEYUP, 0)
                         win32api.keybd_event(win32con.VK_CONTROL, 0, win32con.KEYEVENTF_KEYUP, 0)
                         
-                        time.sleep(0.1)
-                        new_clipboard = pyperclip.paste()
-                        if new_clipboard and new_clipboard.strip() and new_clipboard != old_clipboard:
-                            clipboard_text = new_clipboard
-                            logging.info("Fallback kopiowanie udane!")
-                            
-                    except Exception as e2:
-                        logging.warning(f"Fallback SendKeys failed: {e2}")
-                        
+                        # Check multiple times
+                        for check in range(3):
+                            time.sleep(0.1)
+                            new_clipboard = pyperclip.paste()
+                            if new_clipboard and new_clipboard.strip() and new_clipboard != old_clipboard:
+                                logging.info(f"✅ Win32API copy success on attempt {attempt + 1}")
+                                return new_clipboard
+                    except:
+                        pass
+                
+                logging.warning(f"Attempt {attempt + 1} failed - retrying")
+                time.sleep(0.2)  # Delay before retry
+                
             except Exception as e:
-                logging.warning(f"NATYCHMIASTOWE kopiowanie failed: {e}")
+                logging.warning(f"Copy attempt {attempt + 1} failed: {e}")
+                time.sleep(0.2)
+        
+        logging.error("All clipboard copy attempts failed")
+        return ""
             
             # Ostateczne sprawdzenie
             if not clipboard_text or not clipboard_text.strip() or clipboard_text == old_clipboard:
@@ -903,6 +965,12 @@ class MultiAPICorrector(ctk.CTk):
         """Automatyczne ukrywanie okna po zakończeniu przetwarzania."""
         if not self.processing:  # Tylko jeśli nie ma aktywnego przetwarzania
             logging.info("🔄 Automatyczne ukrywanie okna do pamięci")
+            
+            # Cleanup GIF animations to free RAM
+            for loader in self.api_loaders:
+                if hasattr(loader, 'cleanup'):
+                    loader.cleanup()
+            
             self.withdraw()  # Ukryj z powrotem do pamięci RAM
     
     def cancel_all_processing(self):
@@ -959,6 +1027,11 @@ class MultiAPICorrector(ctk.CTk):
         
         # Kopiuj do schowka
         pyperclip.copy(selected_text)
+        
+        # Cleanup GIF-y żeby zwolnić RAM
+        for loader in self.api_loaders:
+            if hasattr(loader, 'cleanup'):
+                loader.cleanup()
         
         # Ukryj okno z powrotem do pamięci
         self.withdraw()
