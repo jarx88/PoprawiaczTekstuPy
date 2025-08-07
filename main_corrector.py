@@ -143,8 +143,8 @@ class AnimatedGIF(tk.Label):
         self.configure(image=self.frames[self.current_frame])
         self.current_frame = (self.current_frame + 1) % len(self.frames)
         
-        # Schedule next frame
-        self.after(50, self.animate)
+        # Schedule next frame - zsynchronizowane z API polling (500ms / 5 = 100ms)
+        self.after(100, self.animate)
 
 class MultiAPICorrector(ctk.CTk):
     def __init__(self):
@@ -656,8 +656,7 @@ class MultiAPICorrector(ctk.CTk):
             parent=self
         ))
         
-        # Ukryj okno po 5 sekundach
-        self.after(5000, self.withdraw)
+        # Okno pozostaje otwarte do momentu wyboru wyniku lub anulowania
     
     def _show_gui_and_process(self, clipboard_text):
         """Pokazuje GUI i rozpoczyna przetwarzanie - wywołane po udanym kopiowaniu."""
@@ -712,10 +711,10 @@ class MultiAPICorrector(ctk.CTk):
             if hasattr(self.api_loaders[i], 'start'):
                 self.api_loaders[i].start()
             
-            # Show and start progress bar
+            # Show and start progress bar - determinate mode z manual update
             self.api_progress_bars[i].pack(side="right", padx=5, fill="x", expand=True)
             self.api_progress_bars[i].set(0)
-            self.api_progress_bars[i].start()
+            # NIE używamy start() - będziemy ręcznie aktualizować
             
             # Enable cancel button
             self.api_cancel_buttons[i].configure(state="normal")
@@ -833,10 +832,10 @@ class MultiAPICorrector(ctk.CTk):
             if hasattr(self.api_loaders[i], 'start'):
                 self.api_loaders[i].start()
             
-            # Pokaż i uruchom progress bar
+            # Pokaż i uruchom progress bar - determinate mode z manual update
             self.api_progress_bars[i].pack(side="right", padx=5, fill="x", expand=True)
             self.api_progress_bars[i].set(0)
-            self.api_progress_bars[i].start()
+            # NIE używamy start() - będziemy ręcznie aktualizować
             
             # Enable cancel button
             self.api_cancel_buttons[i].configure(state="normal")
@@ -916,7 +915,8 @@ class MultiAPICorrector(ctk.CTk):
             api_thread = threading.Thread(target=run_api)
             api_thread.start()
             
-            # Czekaj na wynik lub anulowanie
+            # Animuj progress bar i czekaj na wynik lub anulowanie
+            
             while api_thread.is_alive():
                 if check_cancelled():
                     logging.info(f"API {api_name} anulowane")
@@ -925,7 +925,22 @@ class MultiAPICorrector(ctk.CTk):
                         idx, "❌ Anulowano", True, 0, session_id
                     ))
                     return
-                time.sleep(0.5)  # Optymalne polling - mniej overhead na GIL i CPU
+                
+                # Animuj progress bar 0->100% w ciągu 1s, potem resetuj
+                for step in range(20):  # 20 kroków x 50ms = 1s
+                    if not api_thread.is_alive():
+                        break
+                    progress = (step + 1) / 20.0  # 0.05, 0.10, ... 1.0
+                    self.after(0, lambda i=idx, v=progress: 
+                        self.api_progress_bars[i].set(v) if i < len(self.api_progress_bars) else None
+                    )
+                    time.sleep(0.05)  # 50ms między krokami
+                
+                # Reset progress bar na początek po 1s
+                if api_thread.is_alive():
+                    self.after(0, lambda i=idx: 
+                        self.api_progress_bars[i].set(0) if i < len(self.api_progress_bars) else None
+                    )
             
             # Sprawdź wynik
             if api_thread_result[1]:
@@ -969,8 +984,7 @@ class MultiAPICorrector(ctk.CTk):
             self.api_loader_frames[idx].place_forget()
             self.api_text_widgets[idx].place(relx=0, rely=0, relwidth=1, relheight=1)
             
-            # Stop progress bar
-            self.api_progress_bars[idx].stop()
+            # Zakończ progress bar na 100% (lub 0% przy błędzie)
             self.api_progress_bars[idx].set(1.0 if not is_error else 0)
             
             # Update text
@@ -1017,7 +1031,7 @@ class MultiAPICorrector(ctk.CTk):
             
             # Hide all progress bars
             for pb in self.api_progress_bars:
-                pb.stop()
+                pb.set(1.0)  # Ustaw na 100% przed ukryciem
                 pb.pack_forget()
             
             if len(self.api_results) > 0:
@@ -1078,8 +1092,8 @@ class MultiAPICorrector(ctk.CTk):
             self.api_text_widgets[i].insert("1.0", "❌ Anulowano")
             self.api_text_widgets[i].configure(state="disabled")
             
-            # Stop progress bars
-            self.api_progress_bars[i].stop()
+            # Zatrzymaj i ukryj progress bar
+            self.api_progress_bars[i].set(0)  # Reset na 0% przy anulowaniu
             self.api_progress_bars[i].pack_forget()
             
             # Disable buttons
