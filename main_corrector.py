@@ -590,12 +590,9 @@ class MultiAPICorrector(ctk.CTk):
         self.update_idletasks()
     
     def handle_hotkey_event(self):
-        """Obsługuje Ctrl+Shift+C - natychmiastowo kopiuje zaznaczony tekst i przetwarza."""
+        """Obsługuje Ctrl+Shift+C - NAJPIERW kopiuje tekst, POTEM pokazuje GUI."""
         try:
-            # NATYCHMIASTOWE pokazanie okna - już wyrenderowane w pamięci! 🚀
-            self.deiconify()
-            self.lift()  # Na wierzch
-            self.focus_force()  # Focus
+            logging.info("🚀 Hotkey detected - clipboard copy FIRST, GUI AFTER")
             
             # Jeśli już przetwarza - anuluj poprzednie
             if self.processing:
@@ -611,49 +608,77 @@ class MultiAPICorrector(ctk.CTk):
             except:
                 pass
             
-            # NATYCHMIASTOWE kopiowanie - bez opóźnień!
-            # Ctrl+Shift+C może powodować utratę zaznaczenia, więc robimy to błyskawicznie
+            # KLUCZOWE: Kopiowanie W TLE - okno NADAL UKRYTE!
+            # Oryginalna aplikacja ma focus, zaznaczenie nie zostanie utracone
+            logging.info("🔄 Kopiowanie w tle - okno ukryte, focus w oryginalnej app")
             clipboard_text = ""
             
             try:
                 clipboard_text = self._robust_clipboard_copy(old_clipboard)
                         
             except Exception as e:
-                logging.warning(f"Robust clipboard copy failed: {e}")
+                logging.warning(f"Background clipboard copy failed: {e}")
             
-            # Ostateczne sprawdzenie
+            # Sprawdzenie czy kopiowanie się powiodło
             if not clipboard_text or not clipboard_text.strip() or clipboard_text == old_clipboard:
-                self.after(0, lambda: self.update_status("⚠️ Brak zaznaczonego tekstu"))
-                logging.warning("NATYCHMIASTOWE kopiowanie nie powiodło się")
+                logging.warning("Clipboard copy failed - pokażę GUI z błędem")
                 
-                # Pokaż message box z instrukcjami natychmiastowego kopiowania
-                self.after(0, lambda: messagebox.showinfo(
-                    "Nie skopiowano tekstu",
-                    "Nie udało się natychmiastowo skopiować zaznaczonego tekstu.\n\n"
-                    "💡 WAŻNE: Ctrl+Shift+C musi być naciśnięte NATYCHMIAST po zaznaczeniu!\n\n"
-                    "🎯 Prawidłowy workflow:\n"
-                    "1. Zaznacz tekst myszką/klawiaturą\n"
-                    "2. OD RAZU naciśnij Ctrl+Shift+C (bez przerwy!)\n"
-                    "3. Nie klikaj gdzie indziej między zaznaczeniem a hotkey\n\n"
-                    "🔧 Alternatywne rozwiązanie:\n"
-                    "1. Zaznacz tekst i skopiuj ręcznie (Ctrl+C)\n"
-                    "2. Następnie użyj przycisku '📋 Wklej tekst'\n\n"
-                    "⚡ Klucz to SZYBKOŚĆ - zaznacz i od razu Ctrl+Shift+C!",
-                    parent=None
-                ))
+                # FAILURE: Pokaż GUI z komunikatem o błędzie
+                self._show_gui_with_error()
                 return
             
+            # SUCCESS: Tekst skopiowany! Teraz pokaż GUI i rozpocznij przetwarzanie
+            logging.info(f"✅ Clipboard copy SUCCESS - {len(clipboard_text)} znaków")
             self.original_text = clipboard_text
             
-            # Okno już jest pokazane - od razu rozpocznij przetwarzanie
-            self.update_status("📝 Przetwarzanie tekstu...")
-            
-            # Rozpocznij przetwarzanie natychmiast
-            self.after(10, lambda: self.process_text_multi_api(clipboard_text))
+            # DOPIERO TERAZ pokaż GUI - po udanym kopiowaniu!
+            self._show_gui_and_process(clipboard_text)
             
         except Exception as e:
             logging.error(f"Błąd obsługi hotkey: {e}")
             self.after(0, lambda: self.update_status("❌ Błąd hotkey"))
+    
+    def _show_gui_with_error(self):
+        """Pokazuje GUI z komunikatem o błędzie kopiowania."""
+        # Pokaż okno
+        self.deiconify()
+        self.lift()
+        self.focus_force()
+        
+        self.after(0, lambda: self.update_status("⚠️ Brak zaznaczonego tekstu"))
+        logging.warning("Kopiowanie w tle nie powiodło się")
+        
+        # Pokaż message box z instrukcjami
+        self.after(100, lambda: messagebox.showinfo(
+            "Nie skopiowano tekstu",
+            "Nie udało się skopiować zaznaczonego tekstu w tle.\n\n"
+            "💡 NOWA STRATEGIA: Clipboard copy PRZED pokazaniem GUI!\n\n"
+            "🎯 Workflow:\n"
+            "1. Zaznacz tekst myszką/klawiaturą\n"
+            "2. Naciśnij Ctrl+Shift+C\n"
+            "3. GUI pojawi się DOPIERO po kopiowaniu\n\n"
+            "🔧 Alternatywne rozwiązanie:\n"
+            "1. Zaznacz tekst i skopiuj ręcznie (Ctrl+C)\n"
+            "2. Użyj przycisku '📋 Wklej tekst'\n\n"
+            "Za chwilę okno zostanie ukryte.",
+            parent=self
+        ))
+        
+        # Ukryj okno po 5 sekundach
+        self.after(5000, self.withdraw)
+    
+    def _show_gui_and_process(self, clipboard_text):
+        """Pokazuje GUI i rozpoczyna przetwarzanie - wywołane po udanym kopiowaniu."""
+        # Pokaż okno - już mamy tekst!
+        self.deiconify()
+        self.lift()
+        self.focus_force()
+        
+        logging.info("🎉 GUI shown AFTER successful clipboard copy!")
+        
+        # Rozpocznij przetwarzanie
+        self.update_status("📝 Przetwarzanie tekstu...")
+        self.after(10, lambda: self.process_text_multi_api(clipboard_text))
     
     def _robust_clipboard_copy(self, old_clipboard, max_retries=3):
         """Robust clipboard copy z retry mechanism i proper timing."""
