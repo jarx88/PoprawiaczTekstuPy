@@ -30,6 +30,8 @@ Nowoczesna aplikacja do automatycznej korekty tekstu z wykorzystaniem AI. Aplika
    - **Windows**: `popraw-tekst-corrector-windows`
    - **Linux**: `popraw-tekst-modern-linux`
 
+⚠️ **Windows**: Przy pierwszym uruchomieniu SmartScreen pokaże ostrzeżenie "Unknown Publisher". Kliknij "More info" → "Run anyway" - to bezpieczne.
+
 ### Option 2: Uruchom z kodu źródłowego
 ```bash
 git clone https://github.com/jarx88/PoprawiaczTekstuPy.git
@@ -97,6 +99,18 @@ Projekt używa GitHub Actions do automatycznego budowania:
 - Jeśli antywirus blokuje: dodaj wyjątek
 - Jeśli hotkey nie działa: uruchom jako administrator
 
+#### ⚠️ Windows SmartScreen "Unknown Publisher"
+Jeśli Windows pokazuje ostrzeżenie SmartScreen:
+1. **Kliknij "More info"** (lub "Więcej informacji")
+2. **Kliknij "Run anyway"** (lub "Uruchom mimo to")
+3. **Aplikacja jest bezpieczna** - ostrzeżenie wynika z braku komercyjnego certyfikatu
+
+**Alternatywnie:**
+- Kliknij prawym na .exe → **Properties** → **General** → "Unblock" (jeśli dostępne)
+- Aplikacja zostanie oznaczona jako zaufana
+
+💡 **To normalne** dla aplikacji open source bez płatnego certyfikatu ($100-700/rok)
+
 ### Linux
 - Zainstaluj tkinter: `sudo apt install python3-tk`
 - Problemy z X11: ustaw `export DISPLAY=:0`
@@ -146,6 +160,9 @@ A: Dodaj klienta w `api_clients/` i zaktualizuj `main_corrector.py`.
 
 **Q: Czy mogę używać bez internetu?**
 A: Nie, aplikacja wymaga połączenia z internetem dla AI APIs.
+
+**Q: Windows blokuje aplikację - "Unknown Publisher"?**
+A: To normalne dla aplikacji bez komercyjnego certyfikatu. Kliknij "More info" → "Run anyway". Aplikacja jest bezpieczna - kod jest jawny i zbudowany przez GitHub Actions.
 
 ---
 
