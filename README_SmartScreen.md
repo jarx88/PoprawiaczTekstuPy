@@ -63,3 +63,17 @@ Aplikacja jest bezpieczna i można ją uruchomić.
 **Dla projektów hobbystycznych:** Dodaj instrukcje dla użytkowników jak ominąć SmartScreen
 
 **Opcjonalnie:** Możesz skonfigurować automatyczne podpisywanie w GitHub Actions (po kupnie certyfikatu)
+
+### 5. 🔒 GitHub Artifact Attestations (dodatkowe bezpieczeństwo)
+
+**⚠️ UWAGA: NIE pomaga z SmartScreen, ale zwiększa bezpieczeństwo**
+
+- `actions/attest-build-provenance` generuje poświadczenie pochodzenia
+- Pozwala użytkownikom zweryfikować, że EXE pochodzi z oryginalnego kodu
+- Darmowe, ale wymaga narzędzi do weryfikacji
+- **Nie zastępuje** code signing certificate dla SmartScreen
+
+Weryfikacja przez użytkowników:
+```bash
+gh attestation verify popraw_tekst_corrector.exe --owner nazwaużytkownika
+```

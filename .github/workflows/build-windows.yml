@@ -70,6 +70,11 @@ jobs:
           exit 1
         }
         
+    - name: Generate build provenance attestation
+      uses: actions/attest-build-provenance@v1
+      with:
+        subject-path: 'dist/popraw_tekst_corrector.exe'
+        
     - name: Upload Windows executable
       uses: actions/upload-artifact@v4
       with:
