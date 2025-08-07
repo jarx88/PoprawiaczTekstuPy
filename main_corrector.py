@@ -620,6 +620,40 @@ class MultiAPICorrector(ctk.CTk):
                         
             except Exception as e:
                 logging.warning(f"Robust clipboard copy failed: {e}")
+            
+            # Ostateczne sprawdzenie
+            if not clipboard_text or not clipboard_text.strip() or clipboard_text == old_clipboard:
+                self.after(0, lambda: self.update_status("⚠️ Brak zaznaczonego tekstu"))
+                logging.warning("NATYCHMIASTOWE kopiowanie nie powiodło się")
+                
+                # Pokaż message box z instrukcjami natychmiastowego kopiowania
+                self.after(0, lambda: messagebox.showinfo(
+                    "Nie skopiowano tekstu",
+                    "Nie udało się natychmiastowo skopiować zaznaczonego tekstu.\n\n"
+                    "💡 WAŻNE: Ctrl+Shift+C musi być naciśnięte NATYCHMIAST po zaznaczeniu!\n\n"
+                    "🎯 Prawidłowy workflow:\n"
+                    "1. Zaznacz tekst myszką/klawiaturą\n"
+                    "2. OD RAZU naciśnij Ctrl+Shift+C (bez przerwy!)\n"
+                    "3. Nie klikaj gdzie indziej między zaznaczeniem a hotkey\n\n"
+                    "🔧 Alternatywne rozwiązanie:\n"
+                    "1. Zaznacz tekst i skopiuj ręcznie (Ctrl+C)\n"
+                    "2. Następnie użyj przycisku '📋 Wklej tekst'\n\n"
+                    "⚡ Klucz to SZYBKOŚĆ - zaznacz i od razu Ctrl+Shift+C!",
+                    parent=None
+                ))
+                return
+            
+            self.original_text = clipboard_text
+            
+            # Okno już jest pokazane - od razu rozpocznij przetwarzanie
+            self.update_status("📝 Przetwarzanie tekstu...")
+            
+            # Rozpocznij przetwarzanie natychmiast
+            self.after(10, lambda: self.process_text_multi_api(clipboard_text))
+            
+        except Exception as e:
+            logging.error(f"Błąd obsługi hotkey: {e}")
+            self.after(0, lambda: self.update_status("❌ Błąd hotkey"))
     
     def _robust_clipboard_copy(self, old_clipboard, max_retries=3):
         """Robust clipboard copy z retry mechanism i proper timing."""
@@ -686,40 +720,6 @@ class MultiAPICorrector(ctk.CTk):
         
         logging.error("All clipboard copy attempts failed")
         return ""
-            
-            # Ostateczne sprawdzenie
-            if not clipboard_text or not clipboard_text.strip() or clipboard_text == old_clipboard:
-                self.after(0, lambda: self.update_status("⚠️ Brak zaznaczonego tekstu"))
-                logging.warning("NATYCHMIASTOWE kopiowanie nie powiodło się")
-                
-                # Pokaż message box z instrukcjami natychmiastowego kopiowania
-                self.after(0, lambda: messagebox.showinfo(
-                    "Nie skopiowano tekstu",
-                    "Nie udało się natychmiastowo skopiować zaznaczonego tekstu.\n\n"
-                    "💡 WAŻNE: Ctrl+Shift+C musi być naciśnięte NATYCHMIAST po zaznaczeniu!\n\n"
-                    "🎯 Prawidłowy workflow:\n"
-                    "1. Zaznacz tekst myszką/klawiaturą\n"
-                    "2. OD RAZU naciśnij Ctrl+Shift+C (bez przerwy!)\n"
-                    "3. Nie klikaj gdzie indziej między zaznaczeniem a hotkey\n\n"
-                    "🔧 Alternatywne rozwiązanie:\n"
-                    "1. Zaznacz tekst i skopiuj ręcznie (Ctrl+C)\n"
-                    "2. Następnie użyj przycisku '📋 Wklej tekst'\n\n"
-                    "⚡ Klucz to SZYBKOŚĆ - zaznacz i od razu Ctrl+Shift+C!",
-                    parent=None
-                ))
-                return
-            
-            self.original_text = clipboard_text
-            
-            # Okno już jest pokazane - od razu rozpocznij przetwarzanie
-            self.update_status("📝 Przetwarzanie tekstu...")
-            
-            # Rozpocznij przetwarzanie natychmiast
-            self.after(10, lambda: self.process_text_multi_api(clipboard_text))
-            
-        except Exception as e:
-            logging.error(f"Błąd obsługi hotkey: {e}")
-            self.after(0, lambda: self.update_status("❌ Błąd hotkey"))
     
     def process_text_multi_api(self, text):
         """Przetwarza tekst używając wszystkich 4 API równocześnie."""
