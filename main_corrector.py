@@ -58,6 +58,10 @@ class AnimatedGIF(tk.Label):
                 while True:
                     frame = self.gif.copy()
                     
+                    # Convert to RGBA for transparency support
+                    if frame.mode != 'RGBA':
+                        frame = frame.convert('RGBA')
+                    
                     # Resize with scale factor for different screen sizes
                     gif_size = max(120, int(200 * self.scale_factor))
                     try:
@@ -390,8 +394,8 @@ class MultiAPICorrector(ctk.CTk):
             content_frame = ctk.CTkFrame(api_frame, fg_color="#f5f5f5", corner_radius=5)
             content_frame.pack(fill="both", expand=True, padx=5, pady=5)
             
-            # Loader frame (dla animacji GIF)
-            loader_frame = tk.Frame(content_frame, bg="white")
+            # Loader frame (dla animacji GIF) - przezroczysty
+            loader_frame = ctk.CTkFrame(content_frame, fg_color="transparent")
             loader_frame.pack(fill="both", expand=True)
             loader_frame.pack_forget()  # Ukryj na początku
             self.api_loader_frames.append(loader_frame)
@@ -788,32 +792,40 @@ class MultiAPICorrector(ctk.CTk):
                 ))
     
     def _update_api_result(self, idx, result, is_error, elapsed_time=0, session_id=0):
-        """Aktualizuje wynik dla danego API."""
+        """Aktualizuje wynik dla danego API z opóźnieniem dla płynności."""
         # Sprawdź czy to aktualna sesja
         if session_id != 0 and session_id != self.current_session_id:
             logging.info(f"Ignoruję nieaktualny wynik z sesji {session_id}")
             return
         
-        # Stop animation
-        if hasattr(self.api_loaders[idx], 'stop'):
-            self.api_loaders[idx].stop()
+        # Funkcja do aktualizacji panelu
+        def update_panel():
+            # Stop animation
+            if hasattr(self.api_loaders[idx], 'stop'):
+                self.api_loaders[idx].stop()
+            
+            # Hide loader, show text
+            self.api_loader_frames[idx].pack_forget()
+            self.api_text_widgets[idx].pack(fill="both", expand=True)
+            
+            # Stop progress bar
+            self.api_progress_bars[idx].stop()
+            self.api_progress_bars[idx].set(1.0 if not is_error else 0)
+            
+            # Update text
+            self.api_text_widgets[idx].configure(state="normal")
+            self.api_text_widgets[idx].delete("1.0", "end")
+            self.api_text_widgets[idx].insert("1.0", result)
+            self.api_text_widgets[idx].configure(state="disabled")
+            
+            # Disable cancel button
+            self.api_cancel_buttons[idx].configure(state="disabled")
+            
+            # Force update dla płynności
+            self.update_idletasks()
         
-        # Hide loader, show text
-        self.api_loader_frames[idx].pack_forget()
-        self.api_text_widgets[idx].pack(fill="both", expand=True)
-        
-        # Stop progress bar
-        self.api_progress_bars[idx].stop()
-        self.api_progress_bars[idx].set(1.0 if not is_error else 0)
-        
-        # Update text
-        self.api_text_widgets[idx].configure(state="normal")
-        self.api_text_widgets[idx].delete("1.0", "end")
-        self.api_text_widgets[idx].insert("1.0", result)
-        self.api_text_widgets[idx].configure(state="disabled")
-        
-        # Disable cancel button
-        self.api_cancel_buttons[idx].configure(state="disabled")
+        # Rozłóż aktualizacje w czasie - każdy panel 30ms później
+        self.after(idx * 30, update_panel)
         
         # Store result and enable button if success
         api_name = ["OpenAI", "Anthropic", "Gemini", "DeepSeek"][idx]
