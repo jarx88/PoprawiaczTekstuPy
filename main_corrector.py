@@ -925,7 +925,7 @@ class MultiAPICorrector(ctk.CTk):
                         idx, "❌ Anulowano", True, 0, session_id
                     ))
                     return
-                time.sleep(0.1)
+                time.sleep(0.5)  # Optymalne polling - mniej overhead na GIL i CPU
             
             # Sprawdź wynik
             if api_thread_result[1]:
