@@ -87,7 +87,14 @@ class AnimatedGIF(tk.Label):
             fallback_image = Image.new('RGB', (gif_size, gif_size), color='blue')
             self.frames = [ImageTk.PhotoImage(fallback_image)]
         
-        super().__init__(master, image=self.frames[0] if self.frames else None)
+        super().__init__(
+            master, 
+            image=self.frames[0] if self.frames else None,
+            borderwidth=0,           # Usuń ramkę
+            highlightthickness=0,    # Usuń highlight ring
+            relief='flat',           # Płaski relief
+            bg='#f5f5f5'            # Dopasuj tło do aplikacji
+        )
         
     def start(self):
         """Start animation."""
@@ -399,8 +406,8 @@ class MultiAPICorrector(ctk.CTk):
             content_frame = ctk.CTkFrame(api_frame, fg_color="#f5f5f5", corner_radius=5)
             content_frame.pack(fill="both", expand=True, padx=5, pady=5)
             
-            # Loader frame (dla animacji GIF) - przezroczysty, ZAWSZE obecny
-            loader_frame = ctk.CTkFrame(content_frame, fg_color="transparent")
+            # Loader frame (dla animacji GIF) - przezroczysty, ZAWSZE obecny, bez ramek
+            loader_frame = ctk.CTkFrame(content_frame, fg_color="transparent", border_width=0)
             loader_frame.place(relx=0, rely=0, relwidth=1, relheight=1)  # Wypełnia całe content_frame
             self.api_loader_frames.append(loader_frame)
             
@@ -547,6 +554,9 @@ class MultiAPICorrector(ctk.CTk):
     def handle_hotkey_event(self):
         """Obsługuje Ctrl+Shift+C - natychmiastowo kopiuje zaznaczony tekst i przetwarza."""
         try:
+            # Ukryj okno podczas przygotowania GUI żeby uniknąć widocznego ładowania
+            self.withdraw()
+            
             # Jeśli już przetwarza - anuluj poprzednie
             if self.processing:
                 logging.info("Hotkey: Anulowanie poprzedniego przetwarzania...")
@@ -611,6 +621,9 @@ class MultiAPICorrector(ctk.CTk):
             
             # Ostateczne sprawdzenie
             if not clipboard_text or not clipboard_text.strip() or clipboard_text == old_clipboard:
+                # Pokaż okno z powrotem przed komunikatem
+                self.deiconify()
+                
                 self.after(0, lambda: self.update_status("⚠️ Brak zaznaczonego tekstu"))
                 logging.warning("NATYCHMIASTOWE kopiowanie nie powiodło się")
                 
@@ -644,6 +657,8 @@ class MultiAPICorrector(ctk.CTk):
             
         except Exception as e:
             logging.error(f"Błąd obsługi hotkey: {e}")
+            # Pokaż okno z powrotem w przypadku błędu
+            self.deiconify()
             self.after(0, lambda: self.update_status("❌ Błąd hotkey"))
     
     def process_text_multi_api(self, text):
