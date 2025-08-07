@@ -155,15 +155,19 @@ class MultiAPICorrector(ctk.CTk):
         self.current_session_id = 0
         self.cancel_flags = {}  # Flagi anulowania dla każdego API
         
-        # UI
+        # UI - zbuduj cały interfejs
         self.setup_ui()
         self.load_config()
         
         # Protocol dla zamykania okna
         self.protocol("WM_DELETE_WINDOW", self.minimize_to_tray)
         
-        # Start minimalized
-        self.after(100, self.minimize_to_tray)
+        # PRE-RENDER wszystko w pamięci dla błyskawicznego pokazania
+        self.update_idletasks()  # Wyrenderuj wszystkie widżety
+        logging.info("🚀 Okno pre-rendered w pamięci - gotowe do natychmiastowego pokazania")
+        
+        # UKRYJ okno - będzie czekać w RAM!
+        self.withdraw()  # Okno ukryte ale w pełni wyrenderowane w pamięci
         
         # Bind window configure events
         self.bind('<Configure>', self.on_window_configure)
@@ -554,8 +558,10 @@ class MultiAPICorrector(ctk.CTk):
     def handle_hotkey_event(self):
         """Obsługuje Ctrl+Shift+C - natychmiastowo kopiuje zaznaczony tekst i przetwarza."""
         try:
-            # Ukryj okno podczas przygotowania GUI żeby uniknąć widocznego ładowania
-            self.withdraw()
+            # NATYCHMIASTOWE pokazanie okna - już wyrenderowane w pamięci! 🚀
+            self.deiconify()
+            self.lift()  # Na wierzch
+            self.focus_force()  # Focus
             
             # Jeśli już przetwarza - anuluj poprzednie
             if self.processing:
@@ -621,9 +627,6 @@ class MultiAPICorrector(ctk.CTk):
             
             # Ostateczne sprawdzenie
             if not clipboard_text or not clipboard_text.strip() or clipboard_text == old_clipboard:
-                # Pokaż okno z powrotem przed komunikatem
-                self.deiconify()
-                
                 self.after(0, lambda: self.update_status("⚠️ Brak zaznaczonego tekstu"))
                 logging.warning("NATYCHMIASTOWE kopiowanie nie powiodło się")
                 
@@ -646,19 +649,14 @@ class MultiAPICorrector(ctk.CTk):
             
             self.original_text = clipboard_text
             
-            # Przygotuj UI przed pokazaniem (pre-render)
+            # Okno już jest pokazane - od razu rozpocznij przetwarzanie
             self.update_status("📝 Przetwarzanie tekstu...")
-            self.update_idletasks()  # Pre-render wszystkich elementów
             
-            # Teraz pokaż okno - będzie już wyrenderowane
-            self.after(0, self.show_window)
-            # Krótkie opóźnienie przed startem przetwarzania dla płynności
-            self.after(50, lambda: self.process_text_multi_api(clipboard_text))
+            # Rozpocznij przetwarzanie natychmiast
+            self.after(10, lambda: self.process_text_multi_api(clipboard_text))
             
         except Exception as e:
             logging.error(f"Błąd obsługi hotkey: {e}")
-            # Pokaż okno z powrotem w przypadku błędu
-            self.deiconify()
             self.after(0, lambda: self.update_status("❌ Błąd hotkey"))
     
     def process_text_multi_api(self, text):
@@ -885,15 +883,27 @@ class MultiAPICorrector(ctk.CTk):
             if len(self.api_results) > 0:
                 self.update_status(f"✅ Gotowe! Otrzymano {len(self.api_results)} wyników")
                 self.progress_label.configure(text="Wybierz najlepszy wynik i kliknij 'Użyj'")
+                
+                # Zaplanuj automatyczne ukrycie po 15 sekundach
+                self.after(15000, self.auto_hide_window)
             else:
                 self.update_status("❌ Nie otrzymano żadnych wyników")
                 self.progress_label.configure(text="Sprawdź klucze API w ustawieniach")
+                
+                # Ukryj szybciej jeśli brak wyników
+                self.after(5000, self.auto_hide_window)
     
     def cancel_single_api(self, idx):
         """Anuluje pojedyncze API."""
         if idx in self.api_threads and self.api_threads[idx].is_alive():
             self.cancel_flags[idx] = True
             logging.info(f"Anulowanie API {idx}")
+    
+    def auto_hide_window(self):
+        """Automatyczne ukrywanie okna po zakończeniu przetwarzania."""
+        if not self.processing:  # Tylko jeśli nie ma aktywnego przetwarzania
+            logging.info("🔄 Automatyczne ukrywanie okna do pamięci")
+            self.withdraw()  # Ukryj z powrotem do pamięci RAM
     
     def cancel_all_processing(self):
         """Anuluje wszystkie przetwarzania."""
@@ -950,8 +960,8 @@ class MultiAPICorrector(ctk.CTk):
         # Kopiuj do schowka
         pyperclip.copy(selected_text)
         
-        # Minimalizuj okno
-        self.minimize_to_tray()
+        # Ukryj okno z powrotem do pamięci
+        self.withdraw()
         
         # Poczekaj chwilę i symuluj Ctrl+V
         def paste_text():
