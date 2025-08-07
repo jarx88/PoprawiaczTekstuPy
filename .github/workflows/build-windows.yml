@@ -38,11 +38,16 @@ jobs:
         pyinstaller popraw_tekst_corrector.spec --noconfirm
         
     - name: Sign executable (optional)
-      if: ${{ secrets.CODE_SIGNING_CERT != '' }}
+      continue-on-error: true
       env:
         CODE_SIGNING_CERT: ${{ secrets.CODE_SIGNING_CERT }}
         CODE_SIGNING_PASSWORD: ${{ secrets.CODE_SIGNING_PASSWORD }}
       run: |
+        if ([string]::IsNullOrEmpty($env:CODE_SIGNING_CERT)) {
+          Write-Host "⚠️ No code signing certificate configured - skipping signing"
+          exit 0
+        }
+        
         # Decode certificate from base64
         $certBytes = [Convert]::FromBase64String($env:CODE_SIGNING_CERT)
         [IO.File]::WriteAllBytes("cert.p12", $certBytes)
