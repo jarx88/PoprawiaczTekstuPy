@@ -669,16 +669,104 @@ class MultiAPICorrector(ctk.CTk):
     
     def _show_gui_and_process(self, clipboard_text):
         """Pokazuje GUI i rozpoczyna przetwarzanie - wywołane po udanym kopiowaniu."""
-        # Pokaż okno - już mamy tekst!
+        logging.info("🔧 Preparing loading state BEFORE showing GUI...")
+        
+        # 1. PRZYGOTÓJ cały loading state PODCZAS gdy okno jest ukryte
+        self._prepare_loading_state_hidden(clipboard_text)
+        
+        # 2. PRE-RENDER wszystko 
+        self.update_idletasks()
+        
+        # 3. DOPIERO teraz pokaż okno - już w pełni przygotowane!
         self.deiconify()
         self.lift()
         self.focus_force()
         
-        logging.info("🎉 GUI shown AFTER successful clipboard copy!")
+        logging.info("🎉 GUI shown with PRE-RENDERED loading state!")
         
-        # Rozpocznij przetwarzanie
+        # 4. Uruchom rzeczywiste API processing (UI już przygotowane)
+        self.after(1, lambda: self._start_api_threads(clipboard_text))
+    
+    def _prepare_loading_state_hidden(self, clipboard_text):
+        """Przygotowuje loading state podczas gdy okno jest ukryte - zero flickering!"""
+        # Setup processing flags
+        self.processing = True
+        self.api_results = {}
+        self.cancel_flags = {}  # Reset flag anulowania
+        self.current_session_id += 1  # Nowa sesja
+        
+        # Store text
+        self.original_text = clipboard_text
+        
+        # Update status and session info
         self.update_status("📝 Przetwarzanie tekstu...")
-        self.after(10, lambda: self.process_text_multi_api(clipboard_text))
+        self.session_label.configure(text=f"📝 Sesja: {self.current_session_id}")
+        self.progress_label.configure(text=f"Tekst: {len(clipboard_text)} znaków")
+        self.api_counter_label.configure(text="🤖 API: 0/4")
+        
+        # Przygotuj wszystkie 4 panele API w loading state
+        for i in range(4):
+            # Clear and prepare text widget
+            self.api_text_widgets[i].configure(state="normal")
+            self.api_text_widgets[i].delete("1.0", "end")
+            self.api_text_widgets[i].insert("1.0", "🔄 Przygotowanie...")
+            self.api_text_widgets[i].configure(state="disabled")
+            
+            # Show loader frame (hide text widget)
+            self.api_text_widgets[i].place_forget()
+            self.api_loader_frames[i].place(relx=0, rely=0, relwidth=1, relheight=1)
+            
+            # Start animation jeśli to AnimatedGIF (lazy loading!)
+            if hasattr(self.api_loaders[i], 'start'):
+                self.api_loaders[i].start()
+            
+            # Show and start progress bar
+            self.api_progress_bars[i].pack(side="right", padx=5, fill="x", expand=True)
+            self.api_progress_bars[i].set(0)
+            self.api_progress_bars[i].start()
+            
+            # Enable cancel button
+            self.api_cancel_buttons[i].configure(state="normal")
+            
+            # Disable use button
+            self.api_buttons[i].configure(state="disabled")
+            
+            # Setup label
+            api_name = ["OpenAI", "Anthropic", "Gemini", "DeepSeek"][i]
+            self.api_labels[i].configure(text=f"🤖 {api_name}")
+        
+        # Enable cancel all button
+        self.cancel_all_button.configure(state="normal")
+        
+        logging.info("🚀 Loading state prepared while hidden - ready for instant show!")
+    
+    def _start_api_threads(self, text):
+        """Uruchamia API threads - UI już przygotowane!"""
+        logging.info("🚀 Starting API threads with pre-rendered UI")
+        
+        # Uruchom wątki dla każdego API
+        self.api_threads = {}
+        session_id = self.current_session_id
+        
+        apis = [
+            (0, "OpenAI", openai_client.correct_text_openai),
+            (1, "Anthropic", anthropic_client.correct_text_anthropic),
+            (2, "Gemini", gemini_client.correct_text_gemini),
+            (3, "DeepSeek", deepseek_client.correct_text_deepseek)
+        ]
+        
+        for idx, api_name, api_func in apis:
+            if self.api_keys.get(api_name):
+                self.cancel_flags[idx] = False  # Flaga anulowania
+                thread = threading.Thread(
+                    target=self._process_single_api,
+                    args=(idx, api_name, api_func, text, session_id),
+                    daemon=True
+                )
+                thread.start()
+                self.api_threads[idx] = thread
+            else:
+                self._update_api_result(idx, f"❌ Brak klucza API dla {api_name}", True, 0, session_id)
     
     def _robust_clipboard_copy(self, old_clipboard, max_retries=3):
         """Robust clipboard copy z retry mechanism i proper timing."""
@@ -1083,8 +1171,24 @@ class MultiAPICorrector(ctk.CTk):
         settings_window.grab_set()
     
     def minimize_to_tray(self):
-        """Minimalizuje do system tray."""
+        """Minimalizuje do system tray - z anulowaniem API jeśli aktywne."""
+        logging.info("🔄 Minimize to tray - sprawdzam aktywne API...")
+        
+        # KLUCZOWE: Anuluj API jeśli są aktywne przy zamykaniu okna!
+        if self.processing:
+            logging.info("❌ Anulowanie wszystkich API przed ukryciem okna")
+            self.cancel_all_processing()
+            
+            # Daj krótki czas na anulowanie
+            time.sleep(0.2)
+        
+        # Cleanup GIF-y żeby zwolnić RAM
+        for loader in self.api_loaders:
+            if hasattr(loader, 'cleanup'):
+                loader.cleanup()
+        
         self.withdraw()
+        
         if tray_icon:
             # Pokaż notyfikację
             try:
