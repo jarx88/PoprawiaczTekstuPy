@@ -33,11 +33,38 @@ jobs:
       run: |
         pyinstaller popraw_tekst_corrector.spec --noconfirm
         
+    - name: Sign executable (optional)
+      if: ${{ secrets.CODE_SIGNING_CERT != '' && secrets.CODE_SIGNING_PASSWORD != '' }}
+      run: |
+        # Decode certificate from base64
+        $certBytes = [Convert]::FromBase64String($env:CODE_SIGNING_CERT)
+        [IO.File]::WriteAllBytes("cert.p12", $certBytes)
+        
+        # Sign the executable
+        & "C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64\signtool.exe" sign /f cert.p12 /p $env:CODE_SIGNING_PASSWORD /t http://timestamp.digicert.com /fd SHA256 "dist\popraw_tekst_corrector.exe"
+        
+        # Clean up certificate
+        Remove-Item cert.p12
+        
+        Write-Host "✅ Executable signed successfully"
+      env:
+        CODE_SIGNING_CERT: ${{ secrets.CODE_SIGNING_CERT }}
+        CODE_SIGNING_PASSWORD: ${{ secrets.CODE_SIGNING_PASSWORD }}
+        
     - name: Test executable exists
       run: |
         if (Test-Path "dist/popraw_tekst_corrector.exe") {
           Write-Host "✅ Release executable created successfully"
           Get-Item "dist/popraw_tekst_corrector.exe" | Select-Object Name, Length, LastWriteTime
+          
+          # Check if executable is signed
+          $signature = Get-AuthenticodeSignature "dist/popraw_tekst_corrector.exe"
+          if ($signature.Status -eq "Valid") {
+            Write-Host "✅ Executable is digitally signed"
+            Write-Host "Signer: $($signature.SignerCertificate.Subject)"
+          } else {
+            Write-Host "⚠️ Executable is not signed (will trigger SmartScreen)"
+          }
         } else {
           Write-Host "❌ Release executable not found"
           exit 1
