@@ -118,11 +118,34 @@ def correct_text_gemini(api_key, model, text_to_correct, instruction_prompt, sys
             raise exception[0]
         
         response = result[0]
-        
-        if response.text:
-            logger.info("Otrzymano poprawną odpowiedź od Google Gemini API.") # Logowanie sukcesu
-            corrected_text = response.text.strip()
-            return corrected_text
+
+        # Spróbuj bezpiecznie zbudować tekst z candidates -> content -> parts -> text
+        def extract_text(resp):
+            try:
+                if getattr(resp, 'text', None):
+                    return resp.text
+            except Exception:
+                pass
+            try:
+                candidates = getattr(resp, 'candidates', []) or []
+                texts = []
+                for cand in candidates:
+                    content = getattr(cand, 'content', None)
+                    if not content:
+                        continue
+                    parts = getattr(content, 'parts', []) or []
+                    for part in parts:
+                        t = getattr(part, 'text', None)
+                        if t:
+                            texts.append(t)
+                return "\n".join(texts)
+            except Exception:
+                return ""
+
+        extracted = (extract_text(response) or '').strip()
+        if extracted:
+            logger.info("Otrzymano poprawną odpowiedź od Google Gemini API.")
+            return extracted
         elif response.prompt_feedback and response.prompt_feedback.block_reason:
             block_reason = response.prompt_feedback.block_reason
             block_message = f"Prompt zablokowany przez Gemini. Powód: {block_reason}"
@@ -133,14 +156,15 @@ def correct_text_gemini(api_key, model, text_to_correct, instruction_prompt, sys
         else:
             try:
                 finish_reason = response.candidates[0].finish_reason if response.candidates else "UNKNOWN"
-                if finish_reason != "STOP":
-                    error_msg = f"Gemini API zakończyło generowanie z powodem: {finish_reason}"
-                    logger.warning(error_msg) # Logowanie ostrzeżenia dla nietypowego finish_reason
-                    return f"Błąd: {error_msg}. Brak tekstu."
+                # 2 == SAFETY lub inny nie-STOP: podaj klarowny komunikat
+                if str(finish_reason) != "STOP":
+                    error_msg = f"Gemini API zakończyło generowanie z powodem: {finish_reason}. Treść została wycięta przez model."
+                    logger.warning(error_msg)
+                    return f"Błąd Gemini: {error_msg}"
             except (AttributeError, IndexError):
-                pass # Ignorujemy błędy przy próbie odczytu finish_reason/candidates
+                pass
             error_msg = "Nie otrzymano tekstu w odpowiedzi od Gemini API lub odpowiedź jest niekompletna."
-            log_api_error("Gemini", error_msg, response) # Używamy log_api_error z odpowiedzią
+            log_api_error("Gemini", error_msg, response)
             return f"Błąd: {error_msg}"
 
     except (HTTPError, TimeoutException) as e:

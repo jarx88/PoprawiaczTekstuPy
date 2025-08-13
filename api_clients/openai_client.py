@@ -90,16 +90,55 @@ def correct_text_openai(api_key, model, text_to_correct, instruction_prompt, sys
         ]
 
         # Wysłanie zapytania do API z timeout
-        response = client.chat.completions.create(
-            model=model,
-            messages=messages,
-            max_completion_tokens=2000,
-            timeout=DEFAULT_TIMEOUT  # Dodatkowy timeout na poziomie wywołania
-        )
+        response = None
+        use_responses_api = any(model.lower().startswith(prefix) for prefix in ["gpt-5", "o4", "o3", "o1"])
+        try:
+            if use_responses_api:
+                # Fallback do Responses API dla nowszych modeli
+                response = client.responses.create(
+                    model=model,
+                    input=messages,
+                    max_output_tokens=2000,
+                    timeout=DEFAULT_TIMEOUT
+                )
+                # Responses API: zbuduj tekst
+                text_chunks = []
+                if hasattr(response, 'output') and response.output:
+                    for item in response.output:
+                        if getattr(item, 'type', None) == 'message' and getattr(item, 'content', None):
+                            for part in item.content:
+                                if getattr(part, 'type', None) == 'output_text':
+                                    text_chunks.append(getattr(part, 'text', '') or '')
+                elif hasattr(response, 'content') and response.content:
+                    # Starsze obiekty mogą mieć content
+                    for part in response.content:
+                        if getattr(part, 'type', None) == 'output_text':
+                            text_chunks.append(getattr(part, 'text', '') or '')
+                corrected_text = ("".join(text_chunks)).strip()
+            else:
+                response = client.chat.completions.create(
+                    model=model,
+                    messages=messages,
+                    max_completion_tokens=2000,
+                    timeout=DEFAULT_TIMEOUT
+                )
+                # Chat Completions API
+                if response.choices and response.choices[0].message:
+                    corrected_text = (response.choices[0].message.content or '').strip()
+                else:
+                    corrected_text = ""
+        except AttributeError:
+            # Jeżeli SDK nie ma responses API w tej wersji, spróbuj chat.completions
+            response = client.chat.completions.create(
+                model=model,
+                messages=messages,
+                max_completion_tokens=2000,
+                timeout=DEFAULT_TIMEOUT
+            )
+            corrected_text = (response.choices[0].message.content or '').strip() if (response.choices and response.choices[0].message) else ""
 
         # Przetworzenie odpowiedzi
-        if response.choices and response.choices[0].message:
-            corrected_text = response.choices[0].message.content.strip()
+        if corrected_text:
             if corrected_text:
                 logger.info("Otrzymano poprawną odpowiedź od OpenAI API.")
                 # Czyszczenie odpowiedzi
@@ -127,8 +166,8 @@ def correct_text_openai(api_key, model, text_to_correct, instruction_prompt, sys
                 logger.warning("Otrzymano odpowiedź od OpenAI, ale treść wiadomości jest pusta.") # Logowanie ostrzeżenia
                 return "Błąd: Nie otrzymano poprawnej odpowiedzi od OpenAI API (brak treści w wiadomości)."
         else:
-            logger.warning("Otrzymano odpowiedź od OpenAI, ale brakuje choices lub message.") # Logowanie ostrzeżenia
-            return "Błąd: Nie otrzymano poprawnej odpowiedzi od OpenAI API (brak choices lub message)."
+            logger.warning("Otrzymano odpowiedź od OpenAI, ale treść jest pusta.")
+            return "Błąd: Nie otrzymano poprawnej odpowiedzi od OpenAI API (brak treści w wiadomości)."
 
     except (httpx.TimeoutException, httpx.ReadTimeout, httpx.ConnectTimeout) as e:
         logger.error(f"Timeout OpenAI API: {e}", exc_info=True)

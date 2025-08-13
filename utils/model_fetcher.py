@@ -2,6 +2,7 @@
 Model fetcher - pobiera listy dostępnych modeli z API providers
 """
 import asyncio
+import os
 import time
 import logging
 from typing import List, Dict, Optional
@@ -41,6 +42,11 @@ model_cache = ModelCache(ttl_minutes=10)
 # Fallback models jeśli API nie działa
 FALLBACK_MODELS = {
     "OpenAI": [
+        # Najnowsze/gate'owane – pokazujemy, jeśli użytkownik ma dostęp
+        "gpt-5.1",
+        "gpt-5",
+        "gpt-5-mini",
+        # Obecne i popularne
         "o4-mini",
         "gpt-4o",
         "gpt-4o-mini", 
@@ -82,8 +88,8 @@ async def fetch_openai_models(api_key: str) -> List[str]:
             if any(keyword in model_id for keyword in ['gpt', 'o4', 'o3', 'o1']):
                 chat_models.append(model.id)
         
-        # Sortuj - najpopularniejsze na początku
-        priority_models = ['o4-mini', 'gpt-4o', 'gpt-4o-mini', 'gpt-4']
+        # Sortuj - najpopularniejsze/nowe na początku
+        priority_models = ['gpt-5.1', 'gpt-5', 'gpt-5-mini', 'o4-mini', 'gpt-4o', 'gpt-4o-mini', 'gpt-4']
         sorted_models = []
         
         for priority in priority_models:
@@ -94,7 +100,9 @@ async def fetch_openai_models(api_key: str) -> List[str]:
         # Dodaj pozostałe alfabetycznie
         sorted_models.extend(sorted(chat_models))
         
-        return sorted_models[:15]  # Maksymalnie 15 modeli
+        models_out = sorted_models[:15]  # Maksymalnie 15 modeli
+        logging.info(f"OpenAI models fetched from API: {len(models_out)} items (sample: {models_out[:3]})")
+        return models_out
         
     except Exception as e:
         logging.warning(f"Nie można pobrać modeli OpenAI: {e}")
@@ -211,17 +219,24 @@ async def fetch_deepseek_models(api_key: str) -> List[str]:
 
 async def fetch_models_for_provider(provider: str, api_key: str) -> List[str]:
     """Pobiera modele dla konkretnego providera."""
+    # Twarde wymuszenie fallbacków przez zmienną środowiskową (np. dla buildów produkcyjnych)
+    if os.getenv('USE_FALLBACK_MODELS', '0') == '1':
+        logging.info(f"Models source for {provider}: FORCED_FALLBACK via USE_FALLBACK_MODELS=1")
+        return FALLBACK_MODELS.get(provider, [])
+
     if not api_key or not api_key.strip():
+        logging.info(f"Models source for {provider}: FALLBACK (no API key provided)")
         return FALLBACK_MODELS.get(provider, [])
     
     # Sprawdź cache
     cached_models = model_cache.get(provider)
     if cached_models:
-        logging.info(f"Using cached models for {provider}")
+        logging.info(f"Models source for {provider}: CACHE ({len(cached_models)} items)")
         return cached_models
     
     # Fetch from API
     try:
+        logging.info(f"Fetching models from API for provider: {provider}")
         if provider == "OpenAI":
             models = await fetch_openai_models(api_key)
         elif provider == "Anthropic":
@@ -236,7 +251,7 @@ async def fetch_models_for_provider(provider: str, api_key: str) -> List[str]:
         # Cache wyniki
         if models:
             model_cache.set(provider, models)
-            logging.info(f"Fetched and cached {len(models)} models for {provider}")
+            logging.info(f"Models source for {provider}: API_OK ({len(models)} items), cached")
         
         return models
         

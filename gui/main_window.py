@@ -1712,6 +1712,17 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event):
         logger.info("Otrzymano żądanie zamknięcia okna - minimalizuję do tray.")
         try:
+            # Jeśli tray nie jest dostępny (np. WSL/Linux bez integracji traya), NIE chowaj okna
+            if not QSystemTrayIcon.isSystemTrayAvailable():
+                logger.warning("System tray niedostępny – nie chowam do traya. Zamiast tego minimalizuję/utrzymuję okno.")
+                try:
+                    self.showMinimized()
+                except Exception:
+                    # Fallback: utrzymaj okno widoczne
+                    self.show()
+                event.ignore()
+                return
+
             if hasattr(self, '_really_closing') and self._really_closing:
                 self._perform_full_cleanup()
                 event.accept()

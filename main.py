@@ -165,6 +165,9 @@ def main():
         setup_logging()
         logging.info("=== Rozpoczynam main ===")
         log_debug_info()
+        # Diagnoza źródła list modeli
+        use_fb = os.getenv('USE_FALLBACK_MODELS', '0')
+        logging.info(f"USE_FALLBACK_MODELS={use_fb}")
         
         # Ustawienia DPI i skalowania
         os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "1"
