@@ -168,20 +168,24 @@ def correct_text_openai(api_key, model, text_to_correct, instruction_prompt, sys
                 logger.info(f"Response hasattr output: {hasattr(response, 'output')}")
                 logger.info(f"Response hasattr content: {hasattr(response, 'content')}")
 
-                # PRAWIDŁOWE parsowanie Responses API zgodnie z dokumentacją
+                # PRAWIDŁOWE parsowanie Responses API - JEDEN źródło tekstu
                 corrected_text = ""
+                
+                # Sprawdź wszystkie możliwe atrybuty i użyj TYLKO PIERWSZEGO znalezionego
                 if hasattr(response, 'output_text') and response.output_text:
-                    # Bezpośredni dostęp do output_text 
                     corrected_text = response.output_text.strip()
-                    logger.info(f"Got output_text directly: {len(corrected_text)} chars")
+                    logger.info(f"✅ Got output_text: {len(corrected_text)} chars")
                 elif hasattr(response, 'response') and response.response:
-                    # Alternatywna struktura
                     corrected_text = response.response.strip()
-                    logger.info(f"Got response field: {len(corrected_text)} chars")
+                    logger.info(f"✅ Got response field: {len(corrected_text)} chars")
+                elif hasattr(response, 'content') and response.content:
+                    corrected_text = str(response.content).strip()
+                    logger.info(f"✅ Got content field: {len(corrected_text)} chars")
                 else:
-                    logger.warning("No output_text or response field found in Responses API")
-                    logger.info(f"Response attributes: {[attr for attr in dir(response) if not attr.startswith('_')]}")
-                    corrected_text = str(response) if response else ""
+                    logger.warning("❌ No recognizable field in Responses API")
+                    attrs = [attr for attr in dir(response) if not attr.startswith('_')]
+                    logger.info(f"Available attributes: {attrs}")
+                    corrected_text = str(response).strip() if response else ""
                 logger.info(f"Extracted text length: {len(corrected_text)} chars")
             else:
                 logger.info(f"🔍 DEBUG: Używam Chat Completions API dla modelu: {model}")
@@ -319,23 +323,7 @@ def correct_text_openai(api_key, model, text_to_correct, instruction_prompt, sys
             final_result = "\n".join(lines).strip()
             logger.info(f"🔍 DEBUG: Final result: {len(final_result)} chars: '{final_result[:100]}...'")
             
-            # DEDUPLIKACJA - usuń powtarzające się fragmenty (fix dla bugów OpenAI API)
-            if final_result:
-                # Podziel na zdania
-                sentences = [s.strip() for s in final_result.split('.') if s.strip()]
-                # Usuń duplikaty zachowując kolejność
-                unique_sentences = []
-                seen = set()
-                for sentence in sentences:
-                    if sentence not in seen and len(sentence) > 3:  # Ignoruj bardzo krótkie
-                        seen.add(sentence)
-                        unique_sentences.append(sentence)
-                
-                if unique_sentences:
-                    final_result = '. '.join(unique_sentences)
-                    if not final_result.endswith('.'):
-                        final_result += '.'
-                    logger.info(f"🔍 DEBUG: Po deduplikacji: {len(final_result)} chars")
+            # Proste przekazanie bez deduplikacji - pozwolę Responses API zwrócić co chce
             
             # Jeśli po czyszczeniu nic nie zostało, zwróć original
             if not final_result and original_text:
