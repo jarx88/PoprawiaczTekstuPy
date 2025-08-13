@@ -48,6 +48,10 @@ def handle_api_error(e):
 
 def correct_text_openai(api_key, model, text_to_correct, instruction_prompt, system_prompt):
     """Poprawia tekst używając OpenAI API."""
+    
+    # CRITICAL DEBUG - to MUSI się pojawić w logach!
+    print(f"🚨 CRITICAL: correct_text_openai CALLED with model: {model}")
+    logger.info(f"🚨 CRITICAL: correct_text_openai CALLED with model: {model}")
     if not api_key:
         logger.warning("Próba użycia OpenAI API bez klucza.") # Logowanie ostrzeżenia
         return "Błąd: Klucz API OpenAI nie został podany."
