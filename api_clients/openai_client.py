@@ -93,6 +93,8 @@ def correct_text_openai(api_key, model, text_to_correct, instruction_prompt, sys
         # Wysłanie zapytania do API z timeout
         response = None
         use_responses_api = any(model.lower().startswith(prefix) for prefix in ["gpt-5", "o4", "o3", "o1"])
+        logger.info(f"Model: {model}, use_responses_api: {use_responses_api}")
+        
         try:
             if use_responses_api:
                 # Responses API dla nowszych modeli z reasoning controls
@@ -109,7 +111,13 @@ def correct_text_openai(api_key, model, text_to_correct, instruction_prompt, sys
                     reasoning_effort = "high"
                     verbosity = "medium"
                 
-                logger.info(f"OpenAI Responses API: reasoning_effort={reasoning_effort}, verbosity={verbosity}")
+                logger.info(f"OpenAI Responses API: model={model}, reasoning_effort={reasoning_effort}, verbosity={verbosity}")
+                
+                # Sprawdź czy SDK ma responses API
+                if not hasattr(client, 'responses'):
+                    logger.warning(f"SDK brak responses API - fallback do chat completions dla {model}")
+                    raise AttributeError("No responses API in SDK")
+                
                 response = client.responses.create(
                     model=model,
                     input=messages,
@@ -119,19 +127,40 @@ def correct_text_openai(api_key, model, text_to_correct, instruction_prompt, sys
                     timeout=DEFAULT_TIMEOUT
                 )
                 # Responses API: zbuduj tekst
+                logger.info(f"Responses API response type: {type(response)}")
+                logger.info(f"Response hasattr output: {hasattr(response, 'output')}")
+                logger.info(f"Response hasattr content: {hasattr(response, 'content')}")
+                
                 text_chunks = []
                 if hasattr(response, 'output') and response.output:
+                    logger.info(f"Processing response.output with {len(response.output)} items")
                     for item in response.output:
-                        if getattr(item, 'type', None) == 'message' and getattr(item, 'content', None):
+                        item_type = getattr(item, 'type', None)
+                        logger.debug(f"Output item type: {item_type}")
+                        if item_type == 'message' and getattr(item, 'content', None):
                             for part in item.content:
-                                if getattr(part, 'type', None) == 'output_text':
-                                    text_chunks.append(getattr(part, 'text', '') or '')
+                                part_type = getattr(part, 'type', None)
+                                logger.debug(f"Content part type: {part_type}")
+                                if part_type == 'output_text':
+                                    text = getattr(part, 'text', '') or ''
+                                    logger.debug(f"Found output_text: {text[:100]}...")
+                                    text_chunks.append(text)
                 elif hasattr(response, 'content') and response.content:
+                    logger.info(f"Processing response.content with {len(response.content)} parts")
                     # Starsze obiekty mogą mieć content
                     for part in response.content:
-                        if getattr(part, 'type', None) == 'output_text':
-                            text_chunks.append(getattr(part, 'text', '') or '')
+                        part_type = getattr(part, 'type', None)
+                        logger.debug(f"Content part type: {part_type}")
+                        if part_type == 'output_text':
+                            text = getattr(part, 'text', '') or ''
+                            logger.debug(f"Found output_text: {text[:100]}...")
+                            text_chunks.append(text)
+                else:
+                    logger.warning("No output or content found in Responses API response")
+                    logger.info(f"Response attributes: {dir(response)}")
+                
                 corrected_text = ("".join(text_chunks)).strip()
+                logger.info(f"Extracted text length: {len(corrected_text)} chars")
             else:
                 response = client.chat.completions.create(
                     model=model,
@@ -144,16 +173,23 @@ def correct_text_openai(api_key, model, text_to_correct, instruction_prompt, sys
                     corrected_text = (response.choices[0].message.content or '').strip()
                 else:
                     corrected_text = ""
-        except (AttributeError, TypeError) as e:
-            # Fallback: SDK nie ma responses API lub model nie wspiera parametrów reasoning
-            logger.warning(f"Responses API fallback dla {model}: {e}")
-            response = client.chat.completions.create(
-                model=model,
-                messages=messages,
-                max_completion_tokens=2000,
-                timeout=DEFAULT_TIMEOUT
-            )
-            corrected_text = (response.choices[0].message.content or '').strip() if (response.choices and response.choices[0].message) else ""
+        except (AttributeError, TypeError, Exception) as e:
+            # Fallback: SDK nie ma responses API, model nie wspiera parametrów reasoning, lub inne błędy API
+            logger.warning(f"Responses API fallback dla {model}: {type(e).__name__}: {e}")
+            
+            # Próbuj standardowe Chat Completions API
+            try:
+                response = client.chat.completions.create(
+                    model=model,
+                    messages=messages,
+                    max_completion_tokens=2000,
+                    timeout=DEFAULT_TIMEOUT
+                )
+                corrected_text = (response.choices[0].message.content or '').strip() if (response.choices and response.choices[0].message) else ""
+                logger.info(f"Chat Completions API fallback successful, text length: {len(corrected_text)} chars")
+            except Exception as fallback_error:
+                logger.error(f"Both Responses and Chat Completions API failed for {model}: {fallback_error}")
+                return f"Błąd: Model {model} niedostępny. Spróbuj inny model (np. gpt-4o-mini)."
 
         # Przetworzenie odpowiedzi
         if corrected_text:
