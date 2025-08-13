@@ -186,8 +186,8 @@ def correct_text_openai(api_key, model, text_to_correct, instruction_prompt, sys
                 if not corrected_text:
                     for variant in model_variants:
                         logger.info(f"Próbuję model variant: {variant}")
-                    # Dwie próby: 1) z parametrami reasoning/text, 2) bez tych pól
-                    attempt_payloads = [
+                        # Dwie próby: 1) z parametrami reasoning/text, 2) bez tych pól
+                        attempt_payloads = [
                         {
                             "model": variant,
                             "input": f"{current_system_prompt}\n\n{instruction_prompt}\n\n---\n{text_to_correct}\n---",
@@ -200,22 +200,22 @@ def correct_text_openai(api_key, model, text_to_correct, instruction_prompt, sys
                             "input": f"{current_system_prompt}\n\n{instruction_prompt}\n\n---\n{text_to_correct}\n---",
                             "max_output_tokens": 2000,
                         },
-                    ]
+                        ]
 
-                    for payload in attempt_payloads:
-                        try:
-                            # Jeśli poprzedni błąd dotyczył unsupported_parameter, przejdź od razu do uproszczonego payloadu
-                            if last_error and ("unsupported_parameter" in str(last_error).lower() or "Unsupported parameter" in str(last_error)):
-                                if "reasoning" in payload or "text" in payload:
-                                    continue
-                            response = client.responses.create(**payload)
-                            logger.info(f"✅ Sukces z modelem: {variant} (payload: {'simple' if 'reasoning' not in payload else 'rich'})")
-                            break
-                        except Exception as e2:
-                            logger.warning(f"Variant {variant} attempt failed: {e2}")
-                            last_error = e2
-                            response = None
-                            continue
+                        for payload in attempt_payloads:
+                            try:
+                                # Jeśli poprzedni błąd dotyczył unsupported_parameter, przejdź od razu do uproszczonego payloadu
+                                if last_error and ("unsupported_parameter" in str(last_error).lower() or "Unsupported parameter" in str(last_error)):
+                                    if "reasoning" in payload or "text" in payload:
+                                        continue
+                                response = client.responses.create(**payload)
+                                logger.info(f"✅ Sukces z modelem: {variant} (payload: {'simple' if 'reasoning' not in payload else 'rich'})")
+                                break
+                            except Exception as e2:
+                                logger.warning(f"Variant {variant} attempt failed: {e2}")
+                                last_error = e2
+                                response = None
+                                continue
                     if response is not None:
                         break
                 
