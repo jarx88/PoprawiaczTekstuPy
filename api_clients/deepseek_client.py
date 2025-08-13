@@ -23,7 +23,7 @@ def handle_api_error(e):
         return True
     return False
 
-def correct_text_deepseek(api_key, model, text_to_correct, instruction_prompt, system_prompt):
+def correct_text_deepseek(api_key, model, text_to_correct, instruction_prompt, system_prompt, on_chunk=None):
     # Określenie stylu na podstawie zawartości instruction_prompt
     style = "prompt" if "prompt" in instruction_prompt.lower() else "normal"
     system_prompt = get_system_prompt(style)
@@ -66,6 +66,41 @@ def correct_text_deepseek(api_key, model, text_to_correct, instruction_prompt, s
                 pool=CONNECTION_TIMEOUT      # 8s na pool
             )
         ) as client:
+            # Streaming jeśli dostępny callback
+            if callable(on_chunk):
+                payload["stream"] = True
+                collected_text = []
+                
+                with client.stream("POST", DEEPSEEK_API_ENDPOINT, headers=headers, json=payload) as response:
+                    response.raise_for_status()
+                    for line in response.iter_lines():
+                        if line.startswith("data: "):
+                            data_str = line[6:]  # Remove "data: "
+                            if data_str.strip() == "[DONE]":
+                                break
+                            try:
+                                import json
+                                chunk_data = json.loads(data_str)
+                                if chunk_data.get("choices") and len(chunk_data["choices"]) > 0:
+                                    delta = chunk_data["choices"][0].get("delta", {})
+                                    content = delta.get("content", "")
+                                    if content:
+                                        collected_text.append(content)
+                                        try:
+                                            on_chunk(content)
+                                        except Exception:
+                                            pass
+                            except Exception:
+                                continue
+                
+                corrected_text = "".join(collected_text).strip()
+                if corrected_text:
+                    return corrected_text
+                else:
+                    logger.warning("DeepSeek streaming nie zwróciło treści")
+                    return "Błąd: Nie otrzymano treści ze streaming DeepSeek API."
+            
+            # Fallback do non-streaming
             response = client.post(DEEPSEEK_API_ENDPOINT, headers=headers, json=payload)
             response.raise_for_status()
 
