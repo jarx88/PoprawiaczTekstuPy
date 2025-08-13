@@ -138,8 +138,53 @@ def correct_text_openai(api_key, model, text_to_correct, instruction_prompt, sys
                 
                 response = None
                 last_error = None
+                corrected_text = ""
 
-                for variant in model_variants:
+                # 1) Jeśli chcemy stream i SDK/plan wspiera Responses.stream – spróbuj najpierw STREAM (simple payload)
+                if callable(on_chunk):
+                    for variant in model_variants:
+                        try:
+                            stream_ctx = client.responses.stream(
+                                model=variant,
+                                input=f"{current_system_prompt}\n\n{instruction_prompt}\n\n---\n{text_to_correct}\n---",
+                                max_output_tokens=2000,
+                            )
+                            collected = []
+                            with stream_ctx as stream:
+                                for event in stream:
+                                    if getattr(event, 'type', '') == 'response.output_text.delta':
+                                        delta_text = getattr(event, 'delta', '') or ''
+                                        if delta_text:
+                                            collected.append(delta_text)
+                                            try:
+                                                on_chunk(delta_text)
+                                            except Exception:
+                                                pass
+                                try:
+                                    final = stream.get_final_response()
+                                except Exception:
+                                    final = None
+                            if final is not None and hasattr(final, 'output_text') and final.output_text:
+                                corrected_text = final.output_text.strip()
+                            else:
+                                corrected_text = ("".join(collected)).strip()
+                            logger.info(f"✅ OpenAI Responses STREAM ok (variant={variant}), len={len(corrected_text)}")
+                            break
+                        except Exception as e_stream:
+                            logger.warning(f"Responses.stream failed for {variant}: {e_stream}")
+                            last_error = e_stream
+                            corrected_text = ""
+                            continue
+                    # Jeśli stream się udał – pomiń create()
+                    if corrected_text:
+                        # Przejdź do sekcji końcowego przetworzenia odpowiedzi poniżej
+                        pass
+                    else:
+                        logger.info("Responses stream niedostępny/nieudany – fallback do create()")
+
+                # 2) Non-stream create() z próbą rich→simple payload
+                if not corrected_text:
+                    for variant in model_variants:
                     logger.info(f"Próbuję model variant: {variant}")
                     # Dwie próby: 1) z parametrami reasoning/text, 2) bez tych pól
                     attempt_payloads = [
@@ -171,35 +216,34 @@ def correct_text_openai(api_key, model, text_to_correct, instruction_prompt, sys
                             last_error = e2
                             response = None
                             continue
-                    if response is not None:
-                        break
+                        if response is not None:
+                            break
                 
-                if response is None:
-                    raise last_error or Exception("All model variants failed")
-                # Responses API: preferuj output_text jeśli dostępny, bez sklejania duplikatów
-                logger.info(f"Responses API response type: {type(response)}")
-                logger.info(f"Response hasattr output: {hasattr(response, 'output')}")
-                logger.info(f"Response hasattr content: {hasattr(response, 'content')}")
+                if not corrected_text:
+                    if response is None:
+                        raise last_error or Exception("All model variants failed")
+                    # Responses API: preferuj output_text jeśli dostępny, bez sklejania duplikatów
+                    logger.info(f"Responses API response type: {type(response)}")
+                    logger.info(f"Response hasattr output: {hasattr(response, 'output')}")
+                    logger.info(f"Response hasattr content: {hasattr(response, 'content')}")
 
-                # PRAWIDŁOWE parsowanie Responses API - JEDEN źródło tekstu
-                corrected_text = ""
-                
-                # Sprawdź wszystkie możliwe atrybuty i użyj TYLKO PIERWSZEGO znalezionego
-                if hasattr(response, 'output_text') and response.output_text:
-                    corrected_text = response.output_text.strip()
-                    logger.info(f"✅ Got output_text: {len(corrected_text)} chars")
-                elif hasattr(response, 'response') and response.response:
-                    corrected_text = response.response.strip()
-                    logger.info(f"✅ Got response field: {len(corrected_text)} chars")
-                elif hasattr(response, 'content') and response.content:
-                    corrected_text = str(response.content).strip()
-                    logger.info(f"✅ Got content field: {len(corrected_text)} chars")
-                else:
-                    logger.warning("❌ No recognizable field in Responses API")
-                    attrs = [attr for attr in dir(response) if not attr.startswith('_')]
-                    logger.info(f"Available attributes: {attrs}")
-                    corrected_text = str(response).strip() if response else ""
-                logger.info(f"Extracted text length: {len(corrected_text)} chars")
+                    # PRAWIDŁOWE parsowanie Responses API - JEDEN źródło tekstu
+                    # Sprawdź wszystkie możliwe atrybuty i użyj TYLKO PIERWSZEGO znalezionego
+                    if hasattr(response, 'output_text') and response.output_text:
+                        corrected_text = response.output_text.strip()
+                        logger.info(f"✅ Got output_text: {len(corrected_text)} chars")
+                    elif hasattr(response, 'response') and response.response:
+                        corrected_text = response.response.strip()
+                        logger.info(f"✅ Got response field: {len(corrected_text)} chars")
+                    elif hasattr(response, 'content') and response.content:
+                        corrected_text = str(response.content).strip()
+                        logger.info(f"✅ Got content field: {len(corrected_text)} chars")
+                    else:
+                        logger.warning("❌ No recognizable field in Responses API")
+                        attrs = [attr for attr in dir(response) if not attr.startswith('_')]
+                        logger.info(f"Available attributes: {attrs}")
+                        corrected_text = str(response).strip() if response else ""
+                    logger.info(f"Extracted text length: {len(corrected_text)} chars")
             else:
                 logger.info(f"🔍 DEBUG: Używam Chat Completions API dla modelu: {model}")
                 if callable(on_chunk):
