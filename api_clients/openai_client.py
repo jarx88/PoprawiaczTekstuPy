@@ -49,8 +49,17 @@ def handle_api_error(e):
 def correct_text_openai(api_key, model, text_to_correct, instruction_prompt, system_prompt):
     """Poprawia tekst używając OpenAI API."""
     
+    # ABSOLUTE PROOF FUNCTION IS CALLED
+    import sys, os
+    # Write to file - this WILL work if function is called
+    try:
+        with open(os.path.expanduser("~/openai_function_called.txt"), "w") as f:
+            f.write(f"FUNCTION CALLED: correct_text_openai model={model}\n")
+            f.flush()
+    except:
+        pass
+    
     # BULLET-PROOF DEBUG - multiple methods!
-    import sys
     try:
         print(f"🚨 CRITICAL FUNCTION ENTRY: correct_text_openai model={model}", flush=True)
         sys.stdout.flush()

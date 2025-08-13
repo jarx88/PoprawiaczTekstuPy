@@ -925,6 +925,12 @@ class MultiAPICorrector(ctk.CTk):
                     # Call API with correct arguments: (api_key, model, text, instruction_prompt, system_prompt)
                     logging.info(f"🚨 CALL BEFORE: Wywołuję {api_name} z argumentami: key={len(self.api_keys[api_name])} chars, model={self.models.get(api_name, '')}, text={len(text)} chars")
                     
+                    # DIRECT INSPECTION of the function being called
+                    if api_name == "OpenAI":
+                        logging.info(f"🚨 DIRECT: Calling OpenAI function at memory {hex(id(api_func))}")
+                        logging.info(f"🚨 DIRECT: Function source file: {getattr(api_func, '__code__', {}).co_filename if hasattr(api_func, '__code__') else 'NO_CODE'}")
+                        logging.info(f"🚨 DIRECT: Function line number: {getattr(api_func, '__code__', {}).co_firstlineno if hasattr(api_func, '__code__') else 'NO_LINE'}")
+                    
                     api_thread_result[0] = api_func(
                         self.api_keys[api_name],
                         self.models.get(api_name, ""),
