@@ -127,13 +127,35 @@ def correct_text_openai(api_key, model, text_to_correct, instruction_prompt, sys
                     logger.warning(f"SDK brak responses API - fallback do chat completions dla {model}")
                     raise AttributeError("No responses API in SDK")
                 # PRAWIDŁOWA składnia Responses API z dokumentacji OpenAI 2025
-                response = client.responses.create(
-                    model=model,
-                    input=f"{current_system_prompt}\n\n{instruction_prompt}\n\n---\n{text_to_correct}\n---",
-                    reasoning_effort=reasoning_effort,
-                    verbosity=verbosity,
-                    max_output_tokens=2000
-                )
+                # Test różnych formatów nazwy modelu
+                model_variants = [model]
+                if model == "gpt-5-mini":
+                    model_variants = ["gpt-5-mini", "gpt-5-mini-2025-08-07", "gpt-5-mini-preview"]
+                elif model == "gpt-5":
+                    model_variants = ["gpt-5", "gpt-5-2025-08-07", "gpt-5-preview"]
+                
+                response = None
+                last_error = None
+                
+                for variant in model_variants:
+                    try:
+                        logger.info(f"Próbuję model variant: {variant}")
+                        response = client.responses.create(
+                            model=variant,
+                            input=f"{current_system_prompt}\n\n{instruction_prompt}\n\n---\n{text_to_correct}\n---",
+                            reasoning_effort=reasoning_effort,
+                            verbosity=verbosity,
+                            max_output_tokens=2000
+                        )
+                        logger.info(f"✅ Sukces z modelem: {variant}")
+                        break
+                    except Exception as variant_error:
+                        logger.warning(f"Model {variant} failed: {variant_error}")
+                        last_error = variant_error
+                        continue
+                
+                if response is None:
+                    raise last_error or Exception("All model variants failed")
                 # Responses API: preferuj output_text jeśli dostępny, bez sklejania duplikatów
                 logger.info(f"Responses API response type: {type(response)}")
                 logger.info(f"Response hasattr output: {hasattr(response, 'output')}")
@@ -195,10 +217,21 @@ def correct_text_openai(api_key, model, text_to_correct, instruction_prompt, sys
                         corrected_text = ""
                         logger.warning(f"🔍 DEBUG: No choices or message in response")
         except (AttributeError, TypeError, Exception) as e:
+            # GPT-5 modele działają TYLKO z Responses API - nie próbuj fallback do Chat Completions
+            if use_responses_api and any(model.lower().startswith(prefix) for prefix in ["gpt-5", "o1"]):
+                logger.error(f"GPT-5 model {model} failed with Responses API: {type(e).__name__}: {e}")
+                # Możliwe przyczyny: błędna nazwa modelu, brak dostępu, stary SDK
+                if "404" in str(e) or "not found" in str(e).lower():
+                    return f"Błąd: Model {model} nie został znaleziony. Możliwe nazwy: gpt-5-mini, gpt-5-nano, gpt-5. Sprawdź dostęp do GPT-5 models w OpenAI account."
+                elif "authentication" in str(e).lower():
+                    return f"Błąd: Brak autoryzacji dla {model}. Sprawdź klucz API i dostęp do GPT-5 models."
+                else:
+                    return f"Błąd GPT-5 Responses API: {e}. Sprawdź SDK version: pip install openai --upgrade"
+            
             # Fallback: SDK nie ma responses API, model nie wspiera parametrów reasoning, lub inne błędy API
             logger.warning(f"Responses API fallback dla {model}: {type(e).__name__}: {e}")
             
-            # Próbuj standardowe Chat Completions API
+            # Próbuj standardowe Chat Completions API (tylko dla nie-GPT-5 modeli)
             try:
                 if callable(on_chunk):
                     stream = client.chat.completions.create(
