@@ -3,6 +3,7 @@ import time # Dla symulacji opóźnienia
 import openai
 import os
 import sys # Dodano import sys
+from datetime import datetime
 import ssl
 import httpx
 from httpx import HTTPError, TimeoutException
@@ -49,15 +50,32 @@ def handle_api_error(e):
 def correct_text_openai(api_key, model, text_to_correct, instruction_prompt, system_prompt):
     """Poprawia tekst używając OpenAI API."""
     
-    # ABSOLUTE PROOF FUNCTION IS CALLED
+    # COMPREHENSIVE FILE-BASED DEBUGGING
     import sys, os
-    # Write to file - this WILL work if function is called
+    debug_file_path = os.path.expanduser("~/openai_debug.txt")
+    
+    def debug_log(msg):
+        """Helper to append debug messages to file"""
+        try:
+            with open(debug_file_path, "a") as f:
+                f.write(f"[{datetime.now().strftime('%H:%M:%S.%f')}] {msg}\n")
+                f.flush()
+        except Exception as e:
+            pass
+    
+    # Clear file and start fresh
     try:
-        with open(os.path.expanduser("~/openai_function_called.txt"), "w") as f:
-            f.write(f"FUNCTION CALLED: correct_text_openai model={model}\n")
+        with open(debug_file_path, "w") as f:
+            f.write(f"=== DEBUG SESSION START ===\n")
+            f.write(f"Time: {datetime.now()}\n")
+            f.write(f"Model: {model}\n")
+            f.write(f"API Key Length: {len(api_key) if api_key else 0}\n")
+            f.write(f"Text Length: {len(text_to_correct) if text_to_correct else 0}\n")
+            f.write(f"Text preview: {text_to_correct[:100] if text_to_correct else 'EMPTY'}\n")
             f.flush()
-    except:
-        pass
+    except Exception as e:
+        with open(debug_file_path, "w") as f:
+            f.write(f"ERROR WRITING INITIAL DEBUG: {e}\n")
     
     # BULLET-PROOF DEBUG - multiple methods!
     try:
@@ -121,6 +139,7 @@ def correct_text_openai(api_key, model, text_to_correct, instruction_prompt, sys
         use_responses_api = any(model.lower().startswith(prefix) for prefix in ["gpt-5", "o4", "o3", "o1"])
         
         logger.info(f"🔍 DEBUG: Model: {model}, use_responses_api: {use_responses_api}")
+        debug_log(f"API decision: model={model}, use_responses_api={use_responses_api}")
         
         try:
             if use_responses_api:
@@ -139,12 +158,15 @@ def correct_text_openai(api_key, model, text_to_correct, instruction_prompt, sys
                     verbosity = "medium"
                 
                 logger.info(f"OpenAI Responses API: model={model}, reasoning_effort={reasoning_effort}, verbosity={verbosity}")
+                debug_log(f"Responses API params: reasoning_effort={reasoning_effort}, verbosity={verbosity}")
                 
                 # Sprawdź czy SDK ma responses API
                 if not hasattr(client, 'responses'):
                     logger.warning(f"SDK brak responses API - fallback do chat completions dla {model}")
+                    debug_log(f"SDK missing 'responses' attribute - falling back to chat completions")
                     raise AttributeError("No responses API in SDK")
                 
+                debug_log(f"Calling client.responses.create...")
                 response = client.responses.create(
                     model=model,
                     input=[
@@ -162,10 +184,16 @@ def correct_text_openai(api_key, model, text_to_correct, instruction_prompt, sys
                     verbosity=verbosity,  # Z konfiguracji użytkownika
                     timeout=DEFAULT_TIMEOUT
                 )
+                debug_log(f"Response received: type={type(response).__name__}")
                 # Responses API: zbuduj tekst
                 logger.info(f"Responses API response type: {type(response)}")
                 logger.info(f"Response hasattr output: {hasattr(response, 'output')}")
                 logger.info(f"Response hasattr content: {hasattr(response, 'content')}")
+                
+                debug_log(f"Response attributes: {', '.join(dir(response))}")
+                debug_log(f"Has 'output': {hasattr(response, 'output')}")
+                debug_log(f"Has 'content': {hasattr(response, 'content')}")
+                debug_log(f"Has 'output_text': {hasattr(response, 'output_text')}")
                 
                 # Najpierw spróbuj prostego accessor'a jeśli dostępny w SDK
                 if hasattr(response, 'output_text') and getattr(response, 'output_text'):
@@ -201,6 +229,8 @@ def correct_text_openai(api_key, model, text_to_correct, instruction_prompt, sys
                 
                 corrected_text = ("".join(text_chunks)).strip()
                 logger.info(f"Extracted text length: {len(corrected_text)} chars")
+                debug_log(f"Responses API - extracted text length: {len(corrected_text)}")
+                debug_log(f"Text preview: {corrected_text[:200] if corrected_text else 'EMPTY'}")
             else:
                 logger.info(f"🔍 DEBUG: Używam Chat Completions API dla modelu: {model}")
                 response = client.chat.completions.create(
@@ -243,10 +273,13 @@ def correct_text_openai(api_key, model, text_to_correct, instruction_prompt, sys
         logger.info(f"🔍 DEBUG: corrected_text długość: {len(corrected_text) if corrected_text else 'None'}")
         logger.info(f"🔍 DEBUG: corrected_text content (50 chars): {corrected_text[:50] if corrected_text else 'EMPTY'}")
         
+        debug_log(f"Final corrected_text check: has_content={bool(corrected_text)}, length={len(corrected_text) if corrected_text else 0}")
+        
         if corrected_text:
             if corrected_text:
                 logger.info("✅ Otrzymano poprawną odpowiedź od OpenAI API.")
                 logger.info(f"🔍 DEBUG: Original response (100 chars): '{corrected_text[:100]}...'")
+                debug_log(f"SUCCESS: Got response from API")
                 
                 # Czyszczenie odpowiedzi - bardziej ostrożne
                 original_text = corrected_text
@@ -285,12 +318,15 @@ def correct_text_openai(api_key, model, text_to_correct, instruction_prompt, sys
                     logger.warning(f"❌ Czyszczenie usunęło całą treść! Zwracam oryginalną odpowiedź")
                     return original_text.strip()
                 
+                debug_log(f"RETURNING SUCCESS: {len(final_result)} chars")
                 return final_result
             else:
                 logger.warning("Otrzymano odpowiedź od OpenAI, ale treść wiadomości jest pusta.") # Logowanie ostrzeżenia
+                debug_log(f"ERROR: Empty message content after processing")
                 return "Błąd: Nie otrzymano poprawnej odpowiedzi od OpenAI API (brak treści w wiadomości)."
         else:
             logger.warning("Otrzymano odpowiedź od OpenAI, ale treść jest pusta.")
+            debug_log(f"ERROR: No content in corrected_text variable")
             return "Błąd: Nie otrzymano poprawnej odpowiedzi od OpenAI API (brak treści w wiadomości)."
 
     except (httpx.TimeoutException, httpx.ReadTimeout, httpx.ConnectTimeout) as e:
