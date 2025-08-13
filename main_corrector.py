@@ -751,36 +751,37 @@ class MultiAPICorrector(ctk.CTk):
         if self.cancel_flags.get(idx, False):
             return
 
-        def do_append(i=idx, s=session_id, t=chunk_text):
-            if s != self.current_session_id:
+        # ASYNCHRONICZNY streaming - używam after() aby nie blokować wątku API
+        def do_append():
+            if session_id != self.current_session_id:
                 return
             # Przełącz z loadera na textbox przy pierwszym fragmencie
-            if i not in self._stream_started_indices:
+            if idx not in self._stream_started_indices:
                 # Ukryj loader i pokaż textbox
                 try:
-                    self.api_loader_frames[i].place_forget()
-                    self.api_text_widgets[i].place(relx=0, rely=0, relwidth=1, relheight=1)
+                    self.api_loader_frames[idx].place_forget()
+                    self.api_text_widgets[idx].place(relx=0, rely=0, relwidth=1, relheight=1)
                 except Exception:
                     pass
                 # Wyczyść placeholder
                 try:
-                    self.api_text_widgets[i].configure(state="normal")
-                    self.api_text_widgets[i].delete("1.0", "end")
-                    self.api_text_widgets[i].configure(state="disabled")
+                    self.api_text_widgets[idx].configure(state="normal")
+                    self.api_text_widgets[idx].delete("1.0", "end")
+                    self.api_text_widgets[idx].configure(state="disabled")
                 except Exception:
                     pass
-                self._stream_started_indices.add(i)
+                self._stream_started_indices.add(idx)
 
             # Doklej fragment
             try:
-                self.api_text_widgets[i].configure(state="normal")
-                self.api_text_widgets[i].insert("end", t)
-                self.api_text_widgets[i].see("end")
-                self.api_text_widgets[i].configure(state="disabled")
+                self.api_text_widgets[idx].configure(state="normal")
+                self.api_text_widgets[idx].insert("end", chunk_text)
+                self.api_text_widgets[idx].see("end")
+                self.api_text_widgets[idx].configure(state="disabled")
             except Exception:
                 pass
         
-        # Aktualizacja musi być w głównym wątku GUI
+        # ASYNCHRONICZNY UPDATE - nie blokuje wątku API
         self.after(0, do_append)
     
     def _start_api_threads(self, text):
