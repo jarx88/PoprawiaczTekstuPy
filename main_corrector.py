@@ -1883,6 +1883,7 @@ def main():
     
     setup_logging()
     logging.info("=== PoprawiaczTekstuPy Multi-API Start ===")
+    logging.info("🔍 DEBUG BUILD VERSION: 2025-08-13-v2 (debug-openai-gpt5nano)")
     
     try:
         # Tworzenie aplikacji
