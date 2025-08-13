@@ -28,7 +28,7 @@ jobs:
       uses: actions/cache@v4
       with:
         path: ~\AppData\Local\pip\Cache
-        key: pip-${{ runner.os }}-${{ hashFiles('requirements.txt') }}
+        key: pip-${{ runner.os }}-${{ hashFiles('requirements.txt') }}-${{ hashFiles('**/*.py') }}-v2
         
     - name: Install dependencies
       run: |
@@ -38,6 +38,11 @@ jobs:
     - name: Install PyInstaller
       run: |
         pip install -U pyinstaller
+        
+    - name: Clean build directories
+      run: |
+        if exist build rmdir /s /q build
+        if exist dist rmdir /s /q dist
         
     - name: Build Windows executable (Release)
       run: |
