@@ -220,51 +220,47 @@ def correct_text_openai(api_key, model, text_to_correct, instruction_prompt, sys
         logger.info(f"🔍 DEBUG: corrected_text content (50 chars): {corrected_text[:50] if corrected_text else 'EMPTY'}")
         
         if corrected_text:
-            if corrected_text:
-                logger.info("✅ Otrzymano poprawną odpowiedź od OpenAI API.")
-                logger.info(f"🔍 DEBUG: Original response (100 chars): '{corrected_text[:100]}...'")
-                
-                # Czyszczenie odpowiedzi - bardziej ostrożne
-                original_text = corrected_text
-                corrected_text = corrected_text.strip()
-                logger.info(f"🔍 DEBUG: Po strip: {len(corrected_text)} chars")
-                
-                # Usuń wszystkie wystąpienia --- z początku i końca (ale zachowaj treść)
-                while corrected_text.startswith("---"):
-                    corrected_text = corrected_text[3:].strip()
-                    logger.info(f"🔍 DEBUG: Po usuwaniu --- z początku: {len(corrected_text)} chars")
-                while corrected_text.endswith("---"):
-                    corrected_text = corrected_text[:-3].strip()
-                    logger.info(f"🔍 DEBUG: Po usuwaniu --- z końca: {len(corrected_text)} chars")
-                
-                # Dodatkowe czyszczenie - usuń linie zawierające same ---
-                lines_before = corrected_text.splitlines()
-                lines = [line for line in lines_before if line.strip() != "---"]
-                logger.info(f"🔍 DEBUG: Linie przed: {len(lines_before)}, po usunięciu ---: {len(lines)}")
-                corrected_text = "\n".join(lines).strip()
-                
-                # Usuń puste linie na początku i końcu (ale zostaw niepuste)
-                lines = [line for line in corrected_text.splitlines() if line.strip()]
-                logger.info(f"🔍 DEBUG: Po usunięciu pustych linii: {len(lines)} linii")
-                
-                # Usuń pierwszą linię jeśli to nazwa stylu
-                style_names = ["normal", "professional", "translate_en", "translate_pl", "change_meaning", "summary"]
-                if lines and any(style in lines[0].lower() for style in style_names):
-                    logger.info(f"🔍 DEBUG: Usuwam pierwszą linię (style): '{lines[0]}'")
-                    lines = lines[1:]
-                
-                final_result = "\n".join(lines).strip()
-                logger.info(f"🔍 DEBUG: Final result: {len(final_result)} chars: '{final_result[:100]}...'")
-                
-                # Jeśli po czyszczeniu nic nie zostało, zwróć original
-                if not final_result and original_text:
-                    logger.warning(f"❌ Czyszczenie usunęło całą treść! Zwracam oryginalną odpowiedź")
-                    return original_text.strip()
-                
-                return final_result
-            else:
-                logger.warning("Otrzymano odpowiedź od OpenAI, ale treść wiadomości jest pusta.") # Logowanie ostrzeżenia
-                return "Błąd: Nie otrzymano poprawnej odpowiedzi od OpenAI API (brak treści w wiadomości)."
+            logger.info("✅ Otrzymano poprawną odpowiedź od OpenAI API.")
+            logger.info(f"🔍 DEBUG: Original response (100 chars): '{corrected_text[:100]}...'")
+            
+            # Czyszczenie odpowiedzi - bardziej ostrożne
+            original_text = corrected_text
+            corrected_text = corrected_text.strip()
+            logger.info(f"🔍 DEBUG: Po strip: {len(corrected_text)} chars")
+            
+            # Usuń wszystkie wystąpienia --- z początku i końca (ale zachowaj treść)
+            while corrected_text.startswith("---"):
+                corrected_text = corrected_text[3:].strip()
+                logger.info(f"🔍 DEBUG: Po usuwaniu --- z początku: {len(corrected_text)} chars")
+            while corrected_text.endswith("---"):
+                corrected_text = corrected_text[:-3].strip()
+                logger.info(f"🔍 DEBUG: Po usuwaniu --- z końca: {len(corrected_text)} chars")
+            
+            # Dodatkowe czyszczenie - usuń linie zawierające same ---
+            lines_before = corrected_text.splitlines()
+            lines = [line for line in lines_before if line.strip() != "---"]
+            logger.info(f"🔍 DEBUG: Linie przed: {len(lines_before)}, po usunięciu ---: {len(lines)}")
+            corrected_text = "\n".join(lines).strip()
+            
+            # Usuń puste linie na początku i końcu (ale zostaw niepuste)
+            lines = [line for line in corrected_text.splitlines() if line.strip()]
+            logger.info(f"🔍 DEBUG: Po usunięciu pustych linii: {len(lines)} linii")
+            
+            # Usuń pierwszą linię jeśli to nazwa stylu
+            style_names = ["normal", "professional", "translate_en", "translate_pl", "change_meaning", "summary"]
+            if lines and any(style in lines[0].lower() for style in style_names):
+                logger.info(f"🔍 DEBUG: Usuwam pierwszą linię (style): '{lines[0]}'")
+                lines = lines[1:]
+            
+            final_result = "\n".join(lines).strip()
+            logger.info(f"🔍 DEBUG: Final result: {len(final_result)} chars: '{final_result[:100]}...'")
+            
+            # Jeśli po czyszczeniu nic nie zostało, zwróć original
+            if not final_result and original_text:
+                logger.warning(f"❌ Czyszczenie usunęło całą treść! Zwracam oryginalną odpowiedź")
+                return original_text.strip()
+            
+            return final_result
         else:
             logger.warning("Otrzymano odpowiedź od OpenAI, ale treść jest pusta.")
             return "Błąd: Nie otrzymano poprawnej odpowiedzi od OpenAI API (brak treści w wiadomości)."
