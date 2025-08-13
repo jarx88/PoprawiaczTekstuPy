@@ -98,9 +98,9 @@ def correct_text_openai(api_key, model, text_to_correct, instruction_prompt, sys
         
         logger.info(f"🔍 DEBUG: Rozpoczynam korekcję dla modelu: {model}")
 
-        # WYŁĄCZONO Responses API - ma znane bugi z duplikatami i pustymi wynikami (OpenAI Community 2025)
-        # Używamy stabilne Chat Completions API dla wszystkich modeli
-        use_responses_api = False
+        # GPT-5 modele WYMAGAJĄ Responses API (nie działają z Chat Completions)
+        # Inne modele używają stabilne Chat Completions API
+        use_responses_api = any(model.lower().startswith(prefix) for prefix in ["gpt-5", "o1"])
         
         logger.info(f"🔍 DEBUG: Model: {model}, use_responses_api: {use_responses_api}")
         
@@ -126,19 +126,12 @@ def correct_text_openai(api_key, model, text_to_correct, instruction_prompt, sys
                 if not hasattr(client, 'responses'):
                     logger.warning(f"SDK brak responses API - fallback do chat completions dla {model}")
                     raise AttributeError("No responses API in SDK")
-                # Użyj minimalnie wymaganego, zgodnego schematu Responses API
-                # Wprowadzamy system prompt jako 'instructions', a treść jako input_text
+                # PRAWIDŁOWA składnia Responses API z dokumentacji OpenAI 2025
                 response = client.responses.create(
                     model=model,
-                    instructions=current_system_prompt,
-                    input=[
-                        {
-                            "role": "user",
-                            "content": [
-                                {"type": "input_text", "text": f"{instruction_prompt}\n\n---\n{text_to_correct}\n---"}
-                            ],
-                        }
-                    ],
+                    input=f"{current_system_prompt}\n\n{instruction_prompt}\n\n---\n{text_to_correct}\n---",
+                    reasoning_effort=reasoning_effort,
+                    verbosity=verbosity,
                     max_output_tokens=2000
                 )
                 # Responses API: preferuj output_text jeśli dostępny, bez sklejania duplikatów
@@ -146,26 +139,20 @@ def correct_text_openai(api_key, model, text_to_correct, instruction_prompt, sys
                 logger.info(f"Response hasattr output: {hasattr(response, 'output')}")
                 logger.info(f"Response hasattr content: {hasattr(response, 'content')}")
 
-                if hasattr(response, 'output_text') and getattr(response, 'output_text'):
-                    corrected_text = (getattr(response, 'output_text') or '').strip()
+                # PRAWIDŁOWE parsowanie Responses API zgodnie z dokumentacją
+                corrected_text = ""
+                if hasattr(response, 'output_text') and response.output_text:
+                    # Bezpośredni dostęp do output_text 
+                    corrected_text = response.output_text.strip()
+                    logger.info(f"Got output_text directly: {len(corrected_text)} chars")
+                elif hasattr(response, 'response') and response.response:
+                    # Alternatywna struktura
+                    corrected_text = response.response.strip()
+                    logger.info(f"Got response field: {len(corrected_text)} chars")
                 else:
-                    text_chunks = []
-                    if hasattr(response, 'output') and response.output:
-                        logger.info(f"Processing response.output with {len(response.output)} items")
-                        for item in response.output:
-                            if getattr(item, 'type', None) == 'message' and getattr(item, 'content', None):
-                                for part in item.content:
-                                    if getattr(part, 'type', None) == 'output_text':
-                                        text_chunks.append(getattr(part, 'text', '') or '')
-                    elif hasattr(response, 'content') and response.content:
-                        logger.info(f"Processing response.content with {len(response.content)} parts")
-                        for part in response.content:
-                            if getattr(part, 'type', None) == 'output_text':
-                                text_chunks.append(getattr(part, 'text', '') or '')
-                    else:
-                        logger.warning("No output or content found in Responses API response")
-                        logger.info(f"Response attributes: {dir(response)}")
-                    corrected_text = ("".join(text_chunks)).strip()
+                    logger.warning("No output_text or response field found in Responses API")
+                    logger.info(f"Response attributes: {[attr for attr in dir(response) if not attr.startswith('_')]}")
+                    corrected_text = str(response) if response else ""
                 logger.info(f"Extracted text length: {len(corrected_text)} chars")
             else:
                 logger.info(f"🔍 DEBUG: Używam Chat Completions API dla modelu: {model}")
