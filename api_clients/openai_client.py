@@ -116,13 +116,9 @@ def correct_text_openai(api_key, model, text_to_correct, instruction_prompt, sys
         response = None
         
         logger.info(f"🔍 DEBUG: Rozpoczynam korekcję dla modelu: {model}")
-        
-        # Tymczasowe wyłączenie Responses API dla gpt-5-nano - problemy z buildami GitHub Actions
-        if "nano" in model.lower() and model.lower().startswith("gpt-5"):
-            logger.info(f"Model gpt-5-nano: używam Chat Completions API zamiast Responses API (build compatibility)")
-            use_responses_api = False
-        else:
-            use_responses_api = any(model.lower().startswith(prefix) for prefix in ["gpt-5", "o4", "o3", "o1"])
+
+        # Użyj Responses API dla wszystkich nowych modeli (w tym gpt-5-nano)
+        use_responses_api = any(model.lower().startswith(prefix) for prefix in ["gpt-5", "o4", "o3", "o1"])
         
         logger.info(f"🔍 DEBUG: Model: {model}, use_responses_api: {use_responses_api}")
         
@@ -151,7 +147,16 @@ def correct_text_openai(api_key, model, text_to_correct, instruction_prompt, sys
                 
                 response = client.responses.create(
                     model=model,
-                    input=messages,
+                    input=[
+                        {
+                            "role": "system",
+                            "content": [{"type": "text", "text": current_system_prompt}],
+                        },
+                        {
+                            "role": "user",
+                            "content": [{"type": "text", "text": f"{instruction_prompt}\n\n---\n{text_to_correct}\n---"}],
+                        },
+                    ],
                     max_output_tokens=2000,
                     reasoning_effort=reasoning_effort,  # Z konfiguracji użytkownika
                     verbosity=verbosity,  # Z konfiguracji użytkownika
@@ -162,7 +167,11 @@ def correct_text_openai(api_key, model, text_to_correct, instruction_prompt, sys
                 logger.info(f"Response hasattr output: {hasattr(response, 'output')}")
                 logger.info(f"Response hasattr content: {hasattr(response, 'content')}")
                 
-                text_chunks = []
+                # Najpierw spróbuj prostego accessor'a jeśli dostępny w SDK
+                if hasattr(response, 'output_text') and getattr(response, 'output_text'):
+                    corrected_text = (getattr(response, 'output_text') or '').strip()
+                
+                text_chunks = [] if not corrected_text else [corrected_text]
                 if hasattr(response, 'output') and response.output:
                     logger.info(f"Processing response.output with {len(response.output)} items")
                     for item in response.output:
