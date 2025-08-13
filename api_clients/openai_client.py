@@ -138,28 +138,41 @@ def correct_text_openai(api_key, model, text_to_correct, instruction_prompt, sys
                 
                 response = None
                 last_error = None
-                
+
                 for variant in model_variants:
-                    try:
-                        logger.info(f"Próbuję model variant: {variant}")
-                        response = client.responses.create(
-                            model=variant,
-                            input=f"{current_system_prompt}\n\n{instruction_prompt}\n\n---\n{text_to_correct}\n---",
-                            reasoning={
-                                "effort": reasoning_effort,  # "minimal", "low", "medium", "high"
-                                "summary": "auto"
-                            },
-                            text={
-                                "verbosity": verbosity  # "low", "medium", "high"
-                            },
-                            max_output_tokens=2000
-                        )
-                        logger.info(f"✅ Sukces z modelem: {variant}")
+                    logger.info(f"Próbuję model variant: {variant}")
+                    # Dwie próby: 1) z parametrami reasoning/text, 2) bez tych pól
+                    attempt_payloads = [
+                        {
+                            "model": variant,
+                            "input": f"{current_system_prompt}\n\n{instruction_prompt}\n\n---\n{text_to_correct}\n---",
+                            "reasoning": {"effort": reasoning_effort},
+                            "text": {"verbosity": verbosity},
+                            "max_output_tokens": 2000,
+                        },
+                        {
+                            "model": variant,
+                            "input": f"{current_system_prompt}\n\n{instruction_prompt}\n\n---\n{text_to_correct}\n---",
+                            "max_output_tokens": 2000,
+                        },
+                    ]
+
+                    for payload in attempt_payloads:
+                        try:
+                            # Jeśli poprzedni błąd dotyczył unsupported_parameter, przejdź od razu do uproszczonego payloadu
+                            if last_error and ("unsupported_parameter" in str(last_error).lower() or "Unsupported parameter" in str(last_error)):
+                                if "reasoning" in payload or "text" in payload:
+                                    continue
+                            response = client.responses.create(**payload)
+                            logger.info(f"✅ Sukces z modelem: {variant} (payload: {'simple' if 'reasoning' not in payload else 'rich'})")
+                            break
+                        except Exception as e2:
+                            logger.warning(f"Variant {variant} attempt failed: {e2}")
+                            last_error = e2
+                            response = None
+                            continue
+                    if response is not None:
                         break
-                    except Exception as variant_error:
-                        logger.warning(f"Model {variant} failed: {variant_error}")
-                        last_error = variant_error
-                        continue
                 
                 if response is None:
                     raise last_error or Exception("All model variants failed")
