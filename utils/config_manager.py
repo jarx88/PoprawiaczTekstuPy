@@ -9,9 +9,9 @@ from .logger import logger
 
 CONFIG_FILE = "config.ini"
 DEFAULT_MODELS = {
-    "OpenAI": "o4-mini",
+    "OpenAI": "gpt-4o-mini",  # Stabilny model zamiast experimental gpt-5-mini
     "Anthropic": "claude-3-7-sonnet-latest",
-    "Gemini": "gemini-2.5-flash-preview-04-17",
+    "Gemini": "gemini-2.5-flash-preview-04-17", 
     "DeepSeek": "deepseek-chat",
 }
 
@@ -43,7 +43,7 @@ DEFAULT_CONFIG = {
         "DeepSeek": ""
     },
     "MODELS": {
-        "OpenAI": "o4-mini",
+        "OpenAI": "gpt-4o-mini", 
         "Anthropic": "claude-3-7-sonnet-latest",
         "Gemini": "gemini-2.5-flash-preview-04-17",
         "DeepSeek": "deepseek-chat"

@@ -96,11 +96,27 @@ def correct_text_gemini(api_key, model, text_to_correct, instruction_prompt, sys
                     try:
                         # SDK emituje części; spróbuj wyciągnąć tekst
                         if hasattr(event, 'text') and event.text:
-                            collected.append(event.text)
-                            try:
-                                on_chunk(event.text)
-                            except Exception:
-                                pass
+                            text_chunk = event.text
+                            collected.append(text_chunk)
+                            
+                            # Jeśli fragment jest bardzo długi, podziel go na mniejsze części
+                            if len(text_chunk) > 50:  # Długie fragmenty dziel na kawałki
+                                words = text_chunk.split()
+                                chunk_size = max(3, len(words) // 10)  # ~10 części
+                                for i in range(0, len(words), chunk_size):
+                                    mini_chunk = ' '.join(words[i:i + chunk_size])
+                                    if mini_chunk:
+                                        try:
+                                            on_chunk(mini_chunk + ' ')
+                                        except Exception:
+                                            pass
+                                        import time
+                                        time.sleep(0.05)  # Krótkie opóźnienie dla efektu streamingu
+                            else:
+                                try:
+                                    on_chunk(text_chunk)
+                                except Exception:
+                                    pass
                     except Exception:
                         continue
                 # Po streamie zbuduj pseudo-response
