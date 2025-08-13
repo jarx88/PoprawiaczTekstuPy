@@ -185,7 +185,7 @@ def correct_text_openai(api_key, model, text_to_correct, instruction_prompt, sys
                 # 2) Non-stream create() z próbą rich→simple payload
                 if not corrected_text:
                     for variant in model_variants:
-                    logger.info(f"Próbuję model variant: {variant}")
+                        logger.info(f"Próbuję model variant: {variant}")
                     # Dwie próby: 1) z parametrami reasoning/text, 2) bez tych pól
                     attempt_payloads = [
                         {
@@ -216,8 +216,8 @@ def correct_text_openai(api_key, model, text_to_correct, instruction_prompt, sys
                             last_error = e2
                             response = None
                             continue
-                        if response is not None:
-                            break
+                    if response is not None:
+                        break
                 
                 if not corrected_text:
                     if response is None:
