@@ -47,7 +47,7 @@ def handle_api_error(e):
         return True
     return False
 
-def correct_text_openai(api_key, model, text_to_correct, instruction_prompt, system_prompt):
+def correct_text_openai(api_key, model, text_to_correct, instruction_prompt, system_prompt, on_chunk=None):
     """Poprawia tekst używając OpenAI API."""
     
         
@@ -181,31 +181,80 @@ def correct_text_openai(api_key, model, text_to_correct, instruction_prompt, sys
                 logger.info(f"Extracted text length: {len(corrected_text)} chars")
             else:
                 logger.info(f"🔍 DEBUG: Używam Chat Completions API dla modelu: {model}")
-                response = client.chat.completions.create(
-                    model=model,
-                    messages=messages,
-                    max_tokens=2000
-                )
-                logger.info(f"🔍 DEBUG: Chat Completions response received")
-                # Chat Completions API
-                if response.choices and response.choices[0].message:
-                    corrected_text = (response.choices[0].message.content or '').strip()
-                    logger.info(f"🔍 DEBUG: Extracted from choices[0].message.content: {len(corrected_text)} chars")
+                if callable(on_chunk):
+                    # Streaming delta
+                    stream = client.chat.completions.create(
+                        model=model,
+                        messages=messages,
+                        stream=True,
+                        max_tokens=2000
+                    )
+                    collected = []
+                    try:
+                        for chunk in stream:
+                            try:
+                                delta = chunk.choices[0].delta.content or ''
+                            except Exception:
+                                delta = ''
+                            if delta:
+                                collected.append(delta)
+                                try:
+                                    on_chunk(delta)
+                                except Exception:
+                                    pass
+                    except Exception as e:
+                        logger.warning(f"OpenAI stream interrupted: {e}")
+                    corrected_text = ("".join(collected)).strip()
                 else:
-                    corrected_text = ""
-                    logger.warning(f"🔍 DEBUG: No choices or message in response")
+                    response = client.chat.completions.create(
+                        model=model,
+                        messages=messages,
+                        max_tokens=2000
+                    )
+                    logger.info(f"🔍 DEBUG: Chat Completions response received")
+                    # Chat Completions API
+                    if response.choices and response.choices[0].message:
+                        corrected_text = (response.choices[0].message.content or '').strip()
+                        logger.info(f"🔍 DEBUG: Extracted from choices[0].message.content: {len(corrected_text)} chars")
+                    else:
+                        corrected_text = ""
+                        logger.warning(f"🔍 DEBUG: No choices or message in response")
         except (AttributeError, TypeError, Exception) as e:
             # Fallback: SDK nie ma responses API, model nie wspiera parametrów reasoning, lub inne błędy API
             logger.warning(f"Responses API fallback dla {model}: {type(e).__name__}: {e}")
             
             # Próbuj standardowe Chat Completions API
             try:
-                response = client.chat.completions.create(
-                    model=model,
-                    messages=messages,
-                    max_tokens=2000
-                )
-                corrected_text = (response.choices[0].message.content or '').strip() if (response.choices and response.choices[0].message) else ""
+                if callable(on_chunk):
+                    stream = client.chat.completions.create(
+                        model=model,
+                        messages=messages,
+                        stream=True,
+                        max_tokens=2000
+                    )
+                    collected = []
+                    try:
+                        for chunk in stream:
+                            try:
+                                delta = chunk.choices[0].delta.content or ''
+                            except Exception:
+                                delta = ''
+                            if delta:
+                                collected.append(delta)
+                                try:
+                                    on_chunk(delta)
+                                except Exception:
+                                    pass
+                    except Exception as e:
+                        logger.warning(f"OpenAI stream (fallback) interrupted: {e}")
+                    corrected_text = ("".join(collected)).strip()
+                else:
+                    response = client.chat.completions.create(
+                        model=model,
+                        messages=messages,
+                        max_tokens=2000
+                    )
+                    corrected_text = (response.choices[0].message.content or '').strip() if (response.choices and response.choices[0].message) else ""
                 logger.info(f"Chat Completions API fallback successful, text length: {len(corrected_text)} chars")
             except Exception as fallback_error:
                 logger.error(f"Both Responses and Chat Completions API failed for {model}: {fallback_error}")

@@ -22,7 +22,7 @@ def handle_api_error(e):
         return True
     return False
 
-def correct_text_anthropic(api_key, model, text_to_correct, instruction_prompt, system_prompt):
+def correct_text_anthropic(api_key, model, text_to_correct, instruction_prompt, system_prompt, on_chunk=None):
     # Określenie stylu na podstawie zawartości instruction_prompt
     style = "prompt" if "prompt" in instruction_prompt.lower() else "normal"
     system_prompt = get_system_prompt(style)
@@ -56,18 +56,47 @@ def correct_text_anthropic(api_key, model, text_to_correct, instruction_prompt, 
 
         user_message_content = f"{instruction_prompt}\n\n---\n{text_to_correct}\n---"
 
-        response = client.messages.create(
-            model=model,
-            max_tokens=2048,
-            system=system_prompt,
-            messages=[
-                {
-                    "role": "user",
-                    "content": user_message_content
-                }
-            ],
-            timeout=DEFAULT_TIMEOUT  # Dodatkowy timeout na poziomie wywołania
-        )
+        # Streaming jeśli jest callback
+        if callable(on_chunk):
+            stream = client.messages.stream(
+                model=model,
+                max_tokens=2048,
+                system=system_prompt,
+                messages=[
+                    {"role": "user", "content": user_message_content}
+                ]
+            )
+            collected = []
+            with stream as events:
+                for event in events:
+                    try:
+                        if getattr(event, 'type', None) == 'content_block_delta':
+                            delta = getattr(event.delta, 'text', '') or ''
+                            if delta:
+                                collected.append(delta)
+                                try:
+                                    on_chunk(delta)
+                                except Exception:
+                                    pass
+                    except Exception:
+                        continue
+            class _Resp:
+                def __init__(self, text):
+                    self.content = [type('B', (), { 'type': 'text', 'text': text })()]
+            response = _Resp(''.join(collected))
+        else:
+            response = client.messages.create(
+                model=model,
+                max_tokens=2048,
+                system=system_prompt,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": user_message_content
+                    }
+                ],
+                timeout=DEFAULT_TIMEOUT
+            )
 
         if response.content and isinstance(response.content, list) and len(response.content) > 0:
             text_block = next((block for block in response.content if block.type == 'text'), None)

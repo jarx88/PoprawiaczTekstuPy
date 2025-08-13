@@ -186,6 +186,10 @@ class MultiAPICorrector(ctk.CTk):
         self.processing = False
         self.current_session_id = 0
         self.cancel_flags = {}  # Flagi anulowania dla każdego API
+        # Guardy anty-duplikacji
+        self.result_update_guard = {}  # klucz: (session_id, idx) -> bool
+        self.paste_in_progress = False
+        self._stream_started_indices = set()
         
         # UI - zbuduj cały interfejs
         self.setup_ui()
@@ -692,6 +696,8 @@ class MultiAPICorrector(ctk.CTk):
         self.api_results = {}
         self.cancel_flags = {}  # Reset flag anulowania
         self.current_session_id += 1  # Nowa sesja
+        # Reset stream flags per session
+        self._stream_started_indices.clear()
         
         # Store text
         self.original_text = clipboard_text
@@ -737,6 +743,45 @@ class MultiAPICorrector(ctk.CTk):
         self.cancel_all_button.configure(state="normal")
         
         logging.info("🚀 Loading state prepared while hidden - ready for instant show!")
+
+    def _append_partial(self, idx, chunk_text, session_id):
+        """Bezpiecznie dokleja fragment strumienia do panelu API w aktualnej sesji."""
+        if session_id != self.current_session_id:
+            return
+        if self.cancel_flags.get(idx, False):
+            return
+
+        def do_append(i=idx, s=session_id, t=chunk_text):
+            if s != self.current_session_id:
+                return
+            # Przełącz z loadera na textbox przy pierwszym fragmencie
+            if i not in self._stream_started_indices:
+                # Ukryj loader i pokaż textbox
+                try:
+                    self.api_loader_frames[i].place_forget()
+                    self.api_text_widgets[i].place(relx=0, rely=0, relwidth=1, relheight=1)
+                except Exception:
+                    pass
+                # Wyczyść placeholder
+                try:
+                    self.api_text_widgets[i].configure(state="normal")
+                    self.api_text_widgets[i].delete("1.0", "end")
+                    self.api_text_widgets[i].configure(state="disabled")
+                except Exception:
+                    pass
+                self._stream_started_indices.add(i)
+
+            # Doklej fragment
+            try:
+                self.api_text_widgets[i].configure(state="normal")
+                self.api_text_widgets[i].insert("end", t)
+                self.api_text_widgets[i].see("end")
+                self.api_text_widgets[i].configure(state="disabled")
+            except Exception:
+                pass
+        
+        # Aktualizacja musi być w głównym wątku GUI
+        self.after(0, do_append)
     
     def _start_api_threads(self, text):
         """Uruchamia API threads - UI już przygotowane!"""
@@ -922,7 +967,7 @@ class MultiAPICorrector(ctk.CTk):
                     logging.info(f"🚨 CRITICAL: api_func type: {type(api_func)}")
                     logging.info(f"🚨 CRITICAL: api_func.__name__: {getattr(api_func, '__name__', 'NO_NAME')}")
                     
-                    # Call API with correct arguments: (api_key, model, text, instruction_prompt, system_prompt)
+                    # Call API with correct arguments: (api_key, model, text, instruction_prompt, system_prompt[, on_chunk])
                     logging.info(f"🚨 CALL BEFORE: Wywołuję {api_name} z argumentami: key={len(self.api_keys[api_name])} chars, model={self.models.get(api_name, '')}, text={len(text)} chars")
                     
                     # DIRECT INSPECTION of the function being called
@@ -931,13 +976,26 @@ class MultiAPICorrector(ctk.CTk):
                         logging.info(f"🚨 DIRECT: Function source file: {getattr(api_func, '__code__', {}).co_filename if hasattr(api_func, '__code__') else 'NO_CODE'}")
                         logging.info(f"🚨 DIRECT: Function line number: {getattr(api_func, '__code__', {}).co_firstlineno if hasattr(api_func, '__code__') else 'NO_LINE'}")
                     
-                    api_thread_result[0] = api_func(
-                        self.api_keys[api_name],
-                        self.models.get(api_name, ""),
-                        text,
-                        instruction_prompt,
-                        system_prompt
-                    )
+                    # Jeżeli klient wspiera streaming (on_chunk), przekaż callback
+                    callback = (lambda ch, i=idx, s=session_id: self._append_partial(i, ch, s))
+                    try:
+                        api_thread_result[0] = api_func(
+                            self.api_keys[api_name],
+                            self.models.get(api_name, ""),
+                            text,
+                            instruction_prompt,
+                            system_prompt,
+                            on_chunk=callback
+                        )
+                    except TypeError:
+                        # Starsza sygnatura bez on_chunk
+                        api_thread_result[0] = api_func(
+                            self.api_keys[api_name],
+                            self.models.get(api_name, ""),
+                            text,
+                            instruction_prompt,
+                            system_prompt
+                        )
                     
                     logging.info(f"🚨 CALL AFTER: {api_name} zwrócił: {type(api_thread_result[0])} - {str(api_thread_result[0])[:100]}...")
                     logging.info(f"🔍 DEBUG: {api_name} API call completed successfully")
@@ -1002,6 +1060,11 @@ class MultiAPICorrector(ctk.CTk):
     
     def _update_api_result(self, idx, result, is_error, elapsed_time=0, session_id=0):
         """Aktualizuje wynik dla danego API z opóźnieniem dla płynności."""
+        # Anti-dup: ignoruj powtórne aktualizacje tego samego API w tej samej sesji
+        guard_key = (session_id or self.current_session_id, idx)
+        if self.result_update_guard.get(guard_key):
+            return
+        self.result_update_guard[guard_key] = True
         # Sprawdź czy to aktualna sesja
         if session_id != 0 and session_id != self.current_session_id:
             logging.info(f"Ignoruję nieaktualny wynik z sesji {session_id}")
@@ -1061,6 +1124,8 @@ class MultiAPICorrector(ctk.CTk):
         if finished_count >= 4:
             self.processing = False
             self.cancel_all_button.configure(state="disabled")
+            # Reset guard po ukończeniu sesji
+            self.result_update_guard.clear()
             
             # Hide all progress bars
             for pb in self.api_progress_bars:
@@ -1130,6 +1195,9 @@ class MultiAPICorrector(ctk.CTk):
         """Używa wyniku z wybranego API - kopiuje do schowka i symuluje Ctrl+V."""
         if idx not in self.api_results:
             return
+        if self.paste_in_progress:
+            return
+        self.paste_in_progress = True
         
         selected_text = self.api_results[idx]
         
@@ -1148,6 +1216,9 @@ class MultiAPICorrector(ctk.CTk):
         def paste_text():
             time.sleep(0.3)
             keyboard.send('ctrl+v')
+            # odblokuj po krótkim czasie, aby uniknąć podwójnych wklejeń
+            time.sleep(0.2)
+            self.paste_in_progress = False
         
         # Uruchom w osobnym wątku
         paste_thread = threading.Thread(target=paste_text)
