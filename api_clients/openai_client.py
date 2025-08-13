@@ -143,8 +143,13 @@ def correct_text_openai(api_key, model, text_to_correct, instruction_prompt, sys
                         response = client.responses.create(
                             model=variant,
                             input=f"{current_system_prompt}\n\n{instruction_prompt}\n\n---\n{text_to_correct}\n---",
-                            reasoning_effort=reasoning_effort,
-                            verbosity=verbosity,
+                            reasoning={
+                                "effort": reasoning_effort,  # "minimal", "low", "medium", "high"
+                                "summary": "auto"
+                            },
+                            text={
+                                "verbosity": verbosity  # "low", "medium", "high"
+                            },
                             max_output_tokens=2000
                         )
                         logger.info(f"✅ Sukces z modelem: {variant}")
