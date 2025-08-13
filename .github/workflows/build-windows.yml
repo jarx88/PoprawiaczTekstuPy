@@ -39,10 +39,12 @@ jobs:
       run: |
         pip install -U pyinstaller
         
-    - name: Clean build directories
+    - name: Clean build directories and PyInstaller cache
       run: |
         if exist build rmdir /s /q build
         if exist dist rmdir /s /q dist
+        if exist %LOCALAPPDATA%\pyinstaller rmdir /s /q %LOCALAPPDATA%\pyinstaller
+        if exist %APPDATA%\pyinstaller rmdir /s /q %APPDATA%\pyinstaller
       shell: cmd
         
     - name: Build Windows executable (Release)
