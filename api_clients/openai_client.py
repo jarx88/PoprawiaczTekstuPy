@@ -250,19 +250,26 @@ def correct_text_openai(api_key, model, text_to_correct, instruction_prompt, sys
         except (AttributeError, TypeError, Exception) as e:
             # Fallback: SDK nie ma responses API, model nie wspiera parametrów reasoning, lub inne błędy API
             logger.warning(f"Responses API fallback dla {model}: {type(e).__name__}: {e}")
+            debug_log(f"RESPONSES API EXCEPTION: {type(e).__name__}: {str(e)}")
+            debug_log(f"Exception details: {repr(e)}")
+            debug_log(f"Falling back to Chat Completions API...")
             
             # Próbuj standardowe Chat Completions API
             try:
+                debug_log(f"Calling client.chat.completions.create (fallback)...")
                 response = client.chat.completions.create(
                     model=model,
                     messages=messages,
                     max_completion_tokens=2000,
                     timeout=DEFAULT_TIMEOUT
                 )
+                debug_log(f"Chat completions fallback response received: type={type(response).__name__}")
                 corrected_text = (response.choices[0].message.content or '').strip() if (response.choices and response.choices[0].message) else ""
                 logger.info(f"Chat Completions API fallback successful, text length: {len(corrected_text)} chars")
+                debug_log(f"Chat Completions fallback - text length: {len(corrected_text)}")
             except Exception as fallback_error:
                 logger.error(f"Both Responses and Chat Completions API failed for {model}: {fallback_error}")
+                debug_log(f"CRITICAL: Both APIs failed! Error: {type(fallback_error).__name__}: {str(fallback_error)}")
                 # Sprawdź typowe literówki w nazwie modelu
                 if "gtp-5" in model.lower():
                     suggested_model = model.replace("gtp-5", "gpt-5")
