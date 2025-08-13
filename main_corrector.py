@@ -21,12 +21,7 @@ from utils import config_manager
 from utils.hotkey_manager import get_hotkey_processor, cleanup_global_hotkey
 from api_clients import openai_client, anthropic_client, gemini_client, deepseek_client
 
-# CRITICAL DEBUG - sprawdź czy funkcja istnieje po importie  
-logging.info(f"🚨 IMPORT DEBUG: openai_client.correct_text_openai exists: {hasattr(openai_client, 'correct_text_openai')}")
-if hasattr(openai_client, 'correct_text_openai'):
-    logging.info(f"🚨 IMPORT DEBUG: openai_client.correct_text_openai is: {openai_client.correct_text_openai}")
-else:
-    logging.error(f"🚨 IMPORT DEBUG: openai_client attributes: {dir(openai_client)}")
+# Import debug moved to main() after setup_logging()
 import httpx
 import pyperclip
 import keyboard
@@ -1890,7 +1885,14 @@ def main():
     
     setup_logging()
     logging.info("=== PoprawiaczTekstuPy Multi-API Start ===")
-    logging.info("🔍 DEBUG BUILD VERSION: 2025-08-13-v2 (debug-openai-gpt5nano)")
+    logging.info("🔍 DEBUG BUILD VERSION: 2025-08-13-v3 (debug-import-fix)")
+    
+    # CRITICAL DEBUG - sprawdź czy funkcja istnieje po importie  
+    logging.info(f"🚨 IMPORT DEBUG: openai_client.correct_text_openai exists: {hasattr(openai_client, 'correct_text_openai')}")
+    if hasattr(openai_client, 'correct_text_openai'):
+        logging.info(f"🚨 IMPORT DEBUG: openai_client.correct_text_openai is: {openai_client.correct_text_openai}")
+    else:
+        logging.error(f"🚨 IMPORT DEBUG: openai_client attributes: {dir(openai_client)}")
     
     try:
         # Tworzenie aplikacji
