@@ -954,9 +954,9 @@ class MultiAPICorrector(ctk.CTk):
                 if check_cancelled():
                     logging.info(f"API {api_name} anulowane")
                     # Nie możemy przerwać wątku, ale przestajemy czekać
-                    self.after(0, lambda: self._update_api_result(
-                        idx, "❌ Anulowano", True, 0, session_id
-                    ))
+                    def update_cancel_gui(i=idx, s=session_id):
+                        self._update_api_result(i, "❌ Anulowano", True, 0, s)
+                    self.after(0, update_cancel_gui)
                     return
                 
                 # Animuj progress bar 0->100% w ciągu 1s, potem resetuj
@@ -988,17 +988,17 @@ class MultiAPICorrector(ctk.CTk):
                 return
             
             # Aktualizuj GUI w głównym wątku
-            self.after(0, lambda: self._update_api_result(
-                idx, result, False, elapsed, session_id
-            ))
+            def update_gui(i=idx, r=result, e=elapsed, s=session_id):
+                self._update_api_result(i, r, False, e, s)
+            self.after(0, update_gui)
             
         except Exception as e:
             if session_id == self.current_session_id and not check_cancelled():
                 error_msg = f"❌ Błąd: {str(e)}"
                 logging.error(f"API {api_name} error: {e}")
-                self.after(0, lambda: self._update_api_result(
-                    idx, error_msg, True, 0, session_id
-                ))
+                def update_error_gui(i=idx, msg=error_msg, s=session_id):
+                    self._update_api_result(i, msg, True, 0, s)
+                self.after(0, update_error_gui)
     
     def _update_api_result(self, idx, result, is_error, elapsed_time=0, session_id=0):
         """Aktualizuje wynik dla danego API z opóźnieniem dla płynności."""
