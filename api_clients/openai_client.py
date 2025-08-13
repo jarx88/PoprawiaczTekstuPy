@@ -92,7 +92,14 @@ def correct_text_openai(api_key, model, text_to_correct, instruction_prompt, sys
 
         # Wysłanie zapytania do API z timeout
         response = None
-        use_responses_api = any(model.lower().startswith(prefix) for prefix in ["gpt-5", "o4", "o3", "o1"])
+        
+        # Tymczasowe wyłączenie Responses API dla gpt-5-nano - problemy z buildami GitHub Actions
+        if "nano" in model.lower() and model.lower().startswith("gpt-5"):
+            logger.info(f"Model gpt-5-nano: używam Chat Completions API zamiast Responses API (build compatibility)")
+            use_responses_api = False
+        else:
+            use_responses_api = any(model.lower().startswith(prefix) for prefix in ["gpt-5", "o4", "o3", "o1"])
+        
         logger.info(f"Model: {model}, use_responses_api: {use_responses_api}")
         
         try:
@@ -189,7 +196,11 @@ def correct_text_openai(api_key, model, text_to_correct, instruction_prompt, sys
                 logger.info(f"Chat Completions API fallback successful, text length: {len(corrected_text)} chars")
             except Exception as fallback_error:
                 logger.error(f"Both Responses and Chat Completions API failed for {model}: {fallback_error}")
-                return f"Błąd: Model {model} niedostępny. Spróbuj inny model (np. gpt-4o-mini)."
+                # Sprawdź typowe literówki w nazwie modelu
+                if "gtp-5" in model.lower():
+                    suggested_model = model.replace("gtp-5", "gpt-5")
+                    return f"Błąd: Model {model} niedostępny. Czy chodziło o '{suggested_model}'? Popraw nazwę modelu w ustawieniach."
+                return f"Błąd: Model {model} niedostępny. Sprawdź nazwę modelu lub spróbuj gpt-4o-mini."
 
         # Przetworzenie odpowiedzi
         if corrected_text:
