@@ -753,6 +753,10 @@ class MultiAPICorrector(ctk.CTk):
             (3, "DeepSeek", deepseek_client.correct_text_deepseek)
         ]
         
+        # CRITICAL DEBUG - sprawdź co jest w apis (first occurrence)
+        for idx, api_name, api_func in apis:
+            logging.info(f"🚨 CRITICAL: apis[{idx}] {api_name} -> {api_func.__name__ if hasattr(api_func, '__name__') else api_func}")
+        
         for idx, api_name, api_func in apis:
             if self.api_keys.get(api_name):
                 logging.info(f"🔍 DEBUG: Starting thread for {api_name} with model: {self.models.get(api_name, 'unknown')}")
@@ -914,6 +918,9 @@ class MultiAPICorrector(ctk.CTk):
                     system_prompt = get_system_prompt("normal")
                     
                     logging.info(f"🔍 DEBUG: Calling {api_name} API function with model: {self.models.get(api_name, '')}")
+                    logging.info(f"🚨 CRITICAL: About to call api_func: {api_func}")
+                    logging.info(f"🚨 CRITICAL: api_func type: {type(api_func)}")
+                    logging.info(f"🚨 CRITICAL: api_func.__name__: {getattr(api_func, '__name__', 'NO_NAME')}")
                     
                     # Call API with correct arguments: (api_key, model, text, instruction_prompt, system_prompt)
                     api_thread_result[0] = api_func(
