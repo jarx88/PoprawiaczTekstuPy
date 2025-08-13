@@ -98,8 +98,9 @@ def correct_text_openai(api_key, model, text_to_correct, instruction_prompt, sys
         
         logger.info(f"🔍 DEBUG: Rozpoczynam korekcję dla modelu: {model}")
 
-        # Użyj Responses API dla wszystkich nowych modeli (w tym gpt-5-nano)
-        use_responses_api = any(model.lower().startswith(prefix) for prefix in ["gpt-5", "o4", "o3", "o1"])
+        # WYŁĄCZONO Responses API - ma znane bugi z duplikatami i pustymi wynikami (OpenAI Community 2025)
+        # Używamy stabilne Chat Completions API dla wszystkich modeli
+        use_responses_api = False
         
         logger.info(f"🔍 DEBUG: Model: {model}, use_responses_api: {use_responses_api}")
         
@@ -140,44 +141,31 @@ def correct_text_openai(api_key, model, text_to_correct, instruction_prompt, sys
                     ],
                     max_output_tokens=2000
                 )
-                # Responses API: zbuduj tekst
+                # Responses API: preferuj output_text jeśli dostępny, bez sklejania duplikatów
                 logger.info(f"Responses API response type: {type(response)}")
                 logger.info(f"Response hasattr output: {hasattr(response, 'output')}")
                 logger.info(f"Response hasattr content: {hasattr(response, 'content')}")
-                
-                # Najpierw spróbuj prostego accessor'a jeśli dostępny w SDK
+
                 if hasattr(response, 'output_text') and getattr(response, 'output_text'):
                     corrected_text = (getattr(response, 'output_text') or '').strip()
-                
-                text_chunks = [] if not corrected_text else [corrected_text]
-                if hasattr(response, 'output') and response.output:
-                    logger.info(f"Processing response.output with {len(response.output)} items")
-                    for item in response.output:
-                        item_type = getattr(item, 'type', None)
-                        logger.debug(f"Output item type: {item_type}")
-                        if item_type == 'message' and getattr(item, 'content', None):
-                            for part in item.content:
-                                part_type = getattr(part, 'type', None)
-                                logger.debug(f"Content part type: {part_type}")
-                                if part_type == 'output_text':
-                                    text = getattr(part, 'text', '') or ''
-                                    logger.debug(f"Found output_text: {text[:100]}...")
-                                    text_chunks.append(text)
-                elif hasattr(response, 'content') and response.content:
-                    logger.info(f"Processing response.content with {len(response.content)} parts")
-                    # Starsze obiekty mogą mieć content
-                    for part in response.content:
-                        part_type = getattr(part, 'type', None)
-                        logger.debug(f"Content part type: {part_type}")
-                        if part_type == 'output_text':
-                            text = getattr(part, 'text', '') or ''
-                            logger.debug(f"Found output_text: {text[:100]}...")
-                            text_chunks.append(text)
                 else:
-                    logger.warning("No output or content found in Responses API response")
-                    logger.info(f"Response attributes: {dir(response)}")
-                
-                corrected_text = ("".join(text_chunks)).strip()
+                    text_chunks = []
+                    if hasattr(response, 'output') and response.output:
+                        logger.info(f"Processing response.output with {len(response.output)} items")
+                        for item in response.output:
+                            if getattr(item, 'type', None) == 'message' and getattr(item, 'content', None):
+                                for part in item.content:
+                                    if getattr(part, 'type', None) == 'output_text':
+                                        text_chunks.append(getattr(part, 'text', '') or '')
+                    elif hasattr(response, 'content') and response.content:
+                        logger.info(f"Processing response.content with {len(response.content)} parts")
+                        for part in response.content:
+                            if getattr(part, 'type', None) == 'output_text':
+                                text_chunks.append(getattr(part, 'text', '') or '')
+                    else:
+                        logger.warning("No output or content found in Responses API response")
+                        logger.info(f"Response attributes: {dir(response)}")
+                    corrected_text = ("".join(text_chunks)).strip()
                 logger.info(f"Extracted text length: {len(corrected_text)} chars")
             else:
                 logger.info(f"🔍 DEBUG: Używam Chat Completions API dla modelu: {model}")
@@ -303,6 +291,24 @@ def correct_text_openai(api_key, model, text_to_correct, instruction_prompt, sys
             
             final_result = "\n".join(lines).strip()
             logger.info(f"🔍 DEBUG: Final result: {len(final_result)} chars: '{final_result[:100]}...'")
+            
+            # DEDUPLIKACJA - usuń powtarzające się fragmenty (fix dla bugów OpenAI API)
+            if final_result:
+                # Podziel na zdania
+                sentences = [s.strip() for s in final_result.split('.') if s.strip()]
+                # Usuń duplikaty zachowując kolejność
+                unique_sentences = []
+                seen = set()
+                for sentence in sentences:
+                    if sentence not in seen and len(sentence) > 3:  # Ignoruj bardzo krótkie
+                        seen.add(sentence)
+                        unique_sentences.append(sentence)
+                
+                if unique_sentences:
+                    final_result = '. '.join(unique_sentences)
+                    if not final_result.endswith('.'):
+                        final_result += '.'
+                    logger.info(f"🔍 DEBUG: Po deduplikacji: {len(final_result)} chars")
             
             # Jeśli po czyszczeniu nic nie zostało, zwróć original
             if not final_result and original_text:
