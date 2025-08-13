@@ -98,8 +98,8 @@ def correct_text_openai(api_key, model, text_to_correct, instruction_prompt, sys
         
         logger.info(f"🔍 DEBUG: Rozpoczynam korekcję dla modelu: {model}")
 
-        # GPT-5 modele WYMAGAJĄ Responses API (nie działają z Chat Completions)
-        # Inne modele używają stabilne Chat Completions API
+        # GPT-5 i o1 modele WYMAGAJĄ Responses API (nie działają z Chat Completions)
+        # gpt-4o-mini używa Chat Completions API
         use_responses_api = any(model.lower().startswith(prefix) for prefix in ["gpt-5", "o1"])
         
         logger.info(f"🔍 DEBUG: Model: {model}, use_responses_api: {use_responses_api}")
@@ -130,9 +130,11 @@ def correct_text_openai(api_key, model, text_to_correct, instruction_prompt, sys
                 # Test różnych formatów nazwy modelu
                 model_variants = [model]
                 if model == "gpt-5-mini":
-                    model_variants = ["gpt-5-mini", "gpt-5-mini-2025-08-07", "gpt-5-mini-preview"]
+                    model_variants = ["gpt-5-mini", "gpt-5-mini-2025-08-07", "gpt-5-mini-preview", "o1-mini", "gpt-4o-mini"]
                 elif model == "gpt-5":
-                    model_variants = ["gpt-5", "gpt-5-2025-08-07", "gpt-5-preview"]
+                    model_variants = ["gpt-5", "gpt-5-2025-08-07", "gpt-5-preview", "o1-preview", "gpt-4o"]
+                elif model == "o1-mini":
+                    model_variants = ["o1-mini", "gpt-4o-mini"]
                 
                 response = None
                 last_error = None
