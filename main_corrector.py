@@ -577,6 +577,11 @@ class MultiAPICorrector(ctk.CTk):
             
             if configured:
                 self.update_status(f"✅ API gotowe: {', '.join(configured)}")
+                # Debug info o modelach
+                logging.info(f"🔍 DEBUG: Configured models: {self.models}")
+                for provider, model in self.models.items():
+                    if self.api_keys.get(provider, '').strip():
+                        logging.info(f"🔍 DEBUG: {provider} -> {model}")
             else:
                 self.update_status("⚠️ Brak API - skonfiguruj w ustawieniach")
                 
@@ -748,6 +753,7 @@ class MultiAPICorrector(ctk.CTk):
         
         for idx, api_name, api_func in apis:
             if self.api_keys.get(api_name):
+                logging.info(f"🔍 DEBUG: Starting thread for {api_name} with model: {self.models.get(api_name, 'unknown')}")
                 self.cancel_flags[idx] = False  # Flaga anulowania
                 thread = threading.Thread(
                     target=self._process_single_api,
@@ -757,6 +763,7 @@ class MultiAPICorrector(ctk.CTk):
                 thread.start()
                 self.api_threads[idx] = thread
             else:
+                logging.info(f"🔍 DEBUG: Skipping {api_name} - no API key")
                 self._update_api_result(idx, f"❌ Brak klucza API dla {api_name}", True, 0, session_id)
     
     def _robust_clipboard_copy(self, max_retries=2):
@@ -867,6 +874,7 @@ class MultiAPICorrector(ctk.CTk):
         
         for idx, api_name, api_func in apis:
             if self.api_keys.get(api_name):
+                logging.info(f"🔍 DEBUG: Starting thread for {api_name} with model: {self.models.get(api_name, 'unknown')}")
                 self.cancel_flags[idx] = False  # Flaga anulowania
                 thread = threading.Thread(
                     target=self._process_single_api,
@@ -876,12 +884,14 @@ class MultiAPICorrector(ctk.CTk):
                 thread.start()
                 self.api_threads[idx] = thread
             else:
+                logging.info(f"🔍 DEBUG: Skipping {api_name} - no API key")
                 self._update_api_result(idx, f"❌ Brak klucza API dla {api_name}", True, 0, session_id)
     
     def _process_single_api(self, idx, api_name, api_func, text, session_id):
         """Przetwarza tekst w pojedynczym API (w wątku)."""
         try:
             start_time = time.time()
+            logging.info(f"🔍 DEBUG: _process_single_api started for {api_name} (idx={idx})")
             
             # Sprawdzaj co 0.5s czy anulowano
             def check_cancelled():
@@ -901,6 +911,8 @@ class MultiAPICorrector(ctk.CTk):
                     instruction_prompt = get_instruction_prompt("normal")
                     system_prompt = get_system_prompt("normal")
                     
+                    logging.info(f"🔍 DEBUG: Calling {api_name} API function with model: {self.models.get(api_name, '')}")
+                    
                     # Call API with correct arguments: (api_key, model, text, instruction_prompt, system_prompt)
                     api_thread_result[0] = api_func(
                         self.api_keys[api_name],
@@ -909,7 +921,9 @@ class MultiAPICorrector(ctk.CTk):
                         instruction_prompt,
                         system_prompt
                     )
+                    logging.info(f"🔍 DEBUG: {api_name} API call completed successfully")
                 except Exception as e:
+                    logging.error(f"🔍 DEBUG: {api_name} API call failed: {e}")
                     api_thread_result[1] = e
             
             api_thread = threading.Thread(target=run_api)
