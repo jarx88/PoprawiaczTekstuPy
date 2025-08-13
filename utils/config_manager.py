@@ -51,6 +51,10 @@ DEFAULT_CONFIG = {
     "SETTINGS": {
         "AutoStartup": "0",
         "DefaultStyle": "normal"
+    },
+    "AI_SETTINGS": {
+        "ReasoningEffort": "high",  # minimal, low, medium, high - dla modeli GPT-5
+        "Verbosity": "medium"       # low, medium, high - szczegółowość odpowiedzi
     }
 }
 
@@ -139,7 +143,7 @@ def load_config():
     
     return api_keys, models, settings, new_config
 
-def save_config(api_keys, models, settings=None):
+def save_config(api_keys, models, settings=None, ai_settings=None):
     """Zapisuje konfigurację do pliku."""
     config_path = get_config_path()
     config = configparser.ConfigParser()
@@ -162,6 +166,8 @@ def save_config(api_keys, models, settings=None):
         config['MODELS'] = {}
     if 'SETTINGS' not in config:
         config['SETTINGS'] = {}
+    if 'AI_SETTINGS' not in config:
+        config['AI_SETTINGS'] = {}
     
     # Zapisz klucze API
     for key, value in api_keys.items():
@@ -175,6 +181,11 @@ def save_config(api_keys, models, settings=None):
     if settings:
         for key, value in settings.items():
             config['SETTINGS'][key] = str(value)
+    
+    # Zapisz ustawienia AI, jeśli podano
+    if ai_settings:
+        for key, value in ai_settings.items():
+            config['AI_SETTINGS'][key] = str(value)
     
     # Zapisz do pliku
     with open(config_path, 'w') as configfile:

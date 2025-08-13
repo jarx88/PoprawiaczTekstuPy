@@ -1358,6 +1358,94 @@ class SettingsWindow(ctk.CTkToplevel):
             model_input.pack(fill="x", pady=(5, 0))
             self.model_inputs[api_key] = model_input
         
+        # AI Settings section for GPT-5 models
+        ai_settings_frame = ctk.CTkFrame(main_frame, fg_color="#6366f1", corner_radius=10)
+        ai_settings_frame.pack(fill="x", pady=(20, 10))
+        
+        # Title for AI settings
+        label_font_size = max(12, int(14 * self.parent.scale_factor))
+        ctk.CTkLabel(
+            ai_settings_frame,
+            text="Ustawienia AI dla modeli GPT-5",
+            font=ctk.CTkFont(size=label_font_size, weight="bold"),
+            text_color="white"
+        ).pack(anchor="w", padx=15, pady=(10, 5))
+        
+        ctk.CTkLabel(
+            ai_settings_frame,
+            text="Dotyczy modeli: gpt-5, gpt-5-mini, gpt-5-nano, o4, o3, o1",
+            font=ctk.CTkFont(size=label_font_size-2),
+            text_color="white"
+        ).pack(anchor="w", padx=15, pady=(0, 10))
+        
+        # Settings grid
+        settings_grid = ctk.CTkFrame(ai_settings_frame, fg_color="transparent")
+        settings_grid.pack(fill="x", padx=15, pady=(0, 15))
+        
+        # Reasoning Effort
+        reasoning_frame = ctk.CTkFrame(settings_grid, fg_color="transparent")
+        reasoning_frame.pack(fill="x", pady=5)
+        
+        ctk.CTkLabel(
+            reasoning_frame,
+            text="Poziom reasoning:",
+            font=ctk.CTkFont(size=label_font_size-2, weight="bold"),
+            text_color="white"
+        ).pack(side="left", padx=(0, 10))
+        
+        self.reasoning_combo = ctk.CTkComboBox(
+            reasoning_frame,
+            values=["minimal", "low", "medium", "high"],
+            width=120,
+            height=30,
+            fg_color="white",
+            button_color="#6366f1",
+            text_color="black",
+            dropdown_fg_color="white"
+        )
+        self.reasoning_combo.pack(side="left", padx=(0, 10))
+        
+        # Reasoning explanation
+        reasoning_help = ctk.CTkLabel(
+            reasoning_frame,
+            text="high = najlepsza jakość (wolniej), minimal = szybko (mniej dokładne)",
+            font=ctk.CTkFont(size=label_font_size-4),
+            text_color="white"
+        )
+        reasoning_help.pack(side="left")
+        
+        # Verbosity
+        verbosity_frame = ctk.CTkFrame(settings_grid, fg_color="transparent")
+        verbosity_frame.pack(fill="x", pady=5)
+        
+        ctk.CTkLabel(
+            verbosity_frame,
+            text="Szczegółowość:",
+            font=ctk.CTkFont(size=label_font_size-2, weight="bold"),
+            text_color="white"
+        ).pack(side="left", padx=(0, 10))
+        
+        self.verbosity_combo = ctk.CTkComboBox(
+            verbosity_frame,
+            values=["low", "medium", "high"],
+            width=120,
+            height=30,
+            fg_color="white",
+            button_color="#6366f1",
+            text_color="black",
+            dropdown_fg_color="white"
+        )
+        self.verbosity_combo.pack(side="left", padx=(0, 10))
+        
+        # Verbosity explanation  
+        verbosity_help = ctk.CTkLabel(
+            verbosity_frame,
+            text="medium = optymalne dla korekty, high = więcej wyjaśnień",
+            font=ctk.CTkFont(size=label_font_size-4),
+            text_color="white"
+        )
+        verbosity_help.pack(side="left")
+        
         # Buttons
         button_frame = ctk.CTkFrame(main_frame)
         button_frame.pack(fill="x", pady=20)
@@ -1397,6 +1485,24 @@ class SettingsWindow(ctk.CTkToplevel):
                     model_combo.set(current_model)
                 except:
                     self.model_inputs[api_key].insert(0, current_model)
+        
+        # Load AI settings
+        try:
+            import configparser
+            from utils.config_manager import get_config_path, get_config_value
+            config = configparser.ConfigParser()
+            config.read(get_config_path())
+            
+            reasoning_effort = get_config_value(config, "AI_SETTINGS", "ReasoningEffort", "high")
+            verbosity = get_config_value(config, "AI_SETTINGS", "Verbosity", "medium")
+            
+            self.reasoning_combo.set(reasoning_effort)
+            self.verbosity_combo.set(verbosity)
+        except Exception as e:
+            logging.debug(f"Błąd ładowania ustawień AI: {e}")
+            # Set defaults
+            self.reasoning_combo.set("high")
+            self.verbosity_combo.set("medium")
         
         # Load models asynchronously
         self.after(100, self.load_all_models_async)
@@ -1547,11 +1653,18 @@ class SettingsWindow(ctk.CTkToplevel):
                     # Fallback to default
                     self.parent.models[api_key] = get_default_model(api_key)
             
+            # Collect AI settings
+            ai_settings = {
+                "ReasoningEffort": self.reasoning_combo.get(),
+                "Verbosity": self.verbosity_combo.get()
+            }
+            
             # Save to file
             config_manager.save_config(
                 self.parent.api_keys,
                 self.parent.models,
-                self.parent.settings
+                self.parent.settings,
+                ai_settings
             )
             
             # Reload config in parent

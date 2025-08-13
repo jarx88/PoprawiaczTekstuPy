@@ -15,6 +15,7 @@ from .base_client import DEFAULT_TIMEOUT, QUICK_TIMEOUT, CONNECTION_TIMEOUT, DEF
 # więc potrzebujemy .utils.logger
 try:
     from utils.logger import logger
+    from utils.config_manager import get_config_value
 except ImportError:
     # Fallback logger w przypadku problemów z importem (np. bezpośrednie uruchamianie)
     import logging
@@ -94,11 +95,27 @@ def correct_text_openai(api_key, model, text_to_correct, instruction_prompt, sys
         use_responses_api = any(model.lower().startswith(prefix) for prefix in ["gpt-5", "o4", "o3", "o1"])
         try:
             if use_responses_api:
-                # Fallback do Responses API dla nowszych modeli
+                # Responses API dla nowszych modeli z reasoning controls
+                # Pobierz ustawienia z config.ini lub użyj domyślnych
+                try:
+                    import configparser
+                    from utils.config_manager import get_config_path
+                    config = configparser.ConfigParser()
+                    config.read(get_config_path())
+                    reasoning_effort = get_config_value(config, "AI_SETTINGS", "ReasoningEffort", "high")
+                    verbosity = get_config_value(config, "AI_SETTINGS", "Verbosity", "medium")
+                except:
+                    # Fallback values jeśli problem z konfiguracją
+                    reasoning_effort = "high"
+                    verbosity = "medium"
+                
+                logger.info(f"OpenAI Responses API: reasoning_effort={reasoning_effort}, verbosity={verbosity}")
                 response = client.responses.create(
                     model=model,
                     input=messages,
                     max_output_tokens=2000,
+                    reasoning_effort=reasoning_effort,  # Z konfiguracji użytkownika
+                    verbosity=verbosity,  # Z konfiguracji użytkownika
                     timeout=DEFAULT_TIMEOUT
                 )
                 # Responses API: zbuduj tekst
@@ -127,8 +144,9 @@ def correct_text_openai(api_key, model, text_to_correct, instruction_prompt, sys
                     corrected_text = (response.choices[0].message.content or '').strip()
                 else:
                     corrected_text = ""
-        except AttributeError:
-            # Jeżeli SDK nie ma responses API w tej wersji, spróbuj chat.completions
+        except (AttributeError, TypeError) as e:
+            # Fallback: SDK nie ma responses API lub model nie wspiera parametrów reasoning
+            logger.warning(f"Responses API fallback dla {model}: {e}")
             response = client.chat.completions.create(
                 model=model,
                 messages=messages,
