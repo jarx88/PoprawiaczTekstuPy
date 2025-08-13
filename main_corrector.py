@@ -923,6 +923,8 @@ class MultiAPICorrector(ctk.CTk):
                     logging.info(f"🚨 CRITICAL: api_func.__name__: {getattr(api_func, '__name__', 'NO_NAME')}")
                     
                     # Call API with correct arguments: (api_key, model, text, instruction_prompt, system_prompt)
+                    logging.info(f"🚨 CALL BEFORE: Wywołuję {api_name} z argumentami: key={len(self.api_keys[api_name])} chars, model={self.models.get(api_name, '')}, text={len(text)} chars")
+                    
                     api_thread_result[0] = api_func(
                         self.api_keys[api_name],
                         self.models.get(api_name, ""),
@@ -930,6 +932,8 @@ class MultiAPICorrector(ctk.CTk):
                         instruction_prompt,
                         system_prompt
                     )
+                    
+                    logging.info(f"🚨 CALL AFTER: {api_name} zwrócił: {type(api_thread_result[0])} - {str(api_thread_result[0])[:100]}...")
                     logging.info(f"🔍 DEBUG: {api_name} API call completed successfully")
                 except Exception as e:
                     logging.error(f"🔍 DEBUG: {api_name} API call failed: {e}")
@@ -1892,7 +1896,17 @@ def main():
     
     setup_logging()
     logging.info("=== PoprawiaczTekstuPy Multi-API Start ===")
-    logging.info("🔍 DEBUG BUILD VERSION: 2025-08-13-v3 (debug-import-fix)")
+    logging.info("🔍 DEBUG BUILD VERSION: 2025-08-13-v4 (call-tracking)")
+    
+    # Sprawdź sygnaturę funkcji OpenAI
+    import inspect
+    try:
+        sig = inspect.signature(openai_client.correct_text_openai)
+        logging.info(f"🚨 SIGNATURE: openai_client.correct_text_openai{sig}")
+        logging.info(f"🚨 MODULE: {openai_client.correct_text_openai.__module__}")
+        logging.info(f"🚨 FILE: {inspect.getfile(openai_client.correct_text_openai)}")
+    except Exception as e:
+        logging.error(f"🚨 SIGNATURE ERROR: {e}")
     
     # CRITICAL DEBUG - sprawdź czy funkcja istnieje po importie  
     logging.info(f"🚨 IMPORT DEBUG: openai_client.correct_text_openai exists: {hasattr(openai_client, 'correct_text_openai')}")
