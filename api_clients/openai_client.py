@@ -93,6 +93,8 @@ def correct_text_openai(api_key, model, text_to_correct, instruction_prompt, sys
         # Wysłanie zapytania do API z timeout
         response = None
         
+        logger.info(f"🔍 DEBUG: Rozpoczynam korekcję dla modelu: {model}")
+        
         # Tymczasowe wyłączenie Responses API dla gpt-5-nano - problemy z buildami GitHub Actions
         if "nano" in model.lower() and model.lower().startswith("gpt-5"):
             logger.info(f"Model gpt-5-nano: używam Chat Completions API zamiast Responses API (build compatibility)")
@@ -100,7 +102,7 @@ def correct_text_openai(api_key, model, text_to_correct, instruction_prompt, sys
         else:
             use_responses_api = any(model.lower().startswith(prefix) for prefix in ["gpt-5", "o4", "o3", "o1"])
         
-        logger.info(f"Model: {model}, use_responses_api: {use_responses_api}")
+        logger.info(f"🔍 DEBUG: Model: {model}, use_responses_api: {use_responses_api}")
         
         try:
             if use_responses_api:
@@ -169,17 +171,21 @@ def correct_text_openai(api_key, model, text_to_correct, instruction_prompt, sys
                 corrected_text = ("".join(text_chunks)).strip()
                 logger.info(f"Extracted text length: {len(corrected_text)} chars")
             else:
+                logger.info(f"🔍 DEBUG: Używam Chat Completions API dla modelu: {model}")
                 response = client.chat.completions.create(
                     model=model,
                     messages=messages,
                     max_completion_tokens=2000,
                     timeout=DEFAULT_TIMEOUT
                 )
+                logger.info(f"🔍 DEBUG: Chat Completions response received")
                 # Chat Completions API
                 if response.choices and response.choices[0].message:
                     corrected_text = (response.choices[0].message.content or '').strip()
+                    logger.info(f"🔍 DEBUG: Extracted from choices[0].message.content: {len(corrected_text)} chars")
                 else:
                     corrected_text = ""
+                    logger.warning(f"🔍 DEBUG: No choices or message in response")
         except (AttributeError, TypeError, Exception) as e:
             # Fallback: SDK nie ma responses API, model nie wspiera parametrów reasoning, lub inne błędy API
             logger.warning(f"Responses API fallback dla {model}: {type(e).__name__}: {e}")
@@ -203,30 +209,52 @@ def correct_text_openai(api_key, model, text_to_correct, instruction_prompt, sys
                 return f"Błąd: Model {model} niedostępny. Sprawdź nazwę modelu lub spróbuj gpt-4o-mini."
 
         # Przetworzenie odpowiedzi
+        logger.info(f"🔍 DEBUG: corrected_text długość: {len(corrected_text) if corrected_text else 'None'}")
+        logger.info(f"🔍 DEBUG: corrected_text content (50 chars): {corrected_text[:50] if corrected_text else 'EMPTY'}")
+        
         if corrected_text:
             if corrected_text:
-                logger.info("Otrzymano poprawną odpowiedź od OpenAI API.")
-                # Czyszczenie odpowiedzi
+                logger.info("✅ Otrzymano poprawną odpowiedź od OpenAI API.")
+                logger.info(f"🔍 DEBUG: Original response (100 chars): '{corrected_text[:100]}...'")
+                
+                # Czyszczenie odpowiedzi - bardziej ostrożne
+                original_text = corrected_text
                 corrected_text = corrected_text.strip()
-                # Usuń wszystkie wystąpienia --- z początku i końca
+                logger.info(f"🔍 DEBUG: Po strip: {len(corrected_text)} chars")
+                
+                # Usuń wszystkie wystąpienia --- z początku i końca (ale zachowaj treść)
                 while corrected_text.startswith("---"):
                     corrected_text = corrected_text[3:].strip()
+                    logger.info(f"🔍 DEBUG: Po usuwaniu --- z początku: {len(corrected_text)} chars")
                 while corrected_text.endswith("---"):
                     corrected_text = corrected_text[:-3].strip()
+                    logger.info(f"🔍 DEBUG: Po usuwaniu --- z końca: {len(corrected_text)} chars")
                 
                 # Dodatkowe czyszczenie - usuń linie zawierające same ---
-                lines = [line for line in corrected_text.splitlines() if line.strip() != "---"]
+                lines_before = corrected_text.splitlines()
+                lines = [line for line in lines_before if line.strip() != "---"]
+                logger.info(f"🔍 DEBUG: Linie przed: {len(lines_before)}, po usunięciu ---: {len(lines)}")
                 corrected_text = "\n".join(lines).strip()
                 
-                # Usuń puste linie na początku i końcu
+                # Usuń puste linie na początku i końcu (ale zostaw niepuste)
                 lines = [line for line in corrected_text.splitlines() if line.strip()]
+                logger.info(f"🔍 DEBUG: Po usunięciu pustych linii: {len(lines)} linii")
                 
                 # Usuń pierwszą linię jeśli to nazwa stylu
                 style_names = ["normal", "professional", "translate_en", "translate_pl", "change_meaning", "summary"]
                 if lines and any(style in lines[0].lower() for style in style_names):
+                    logger.info(f"🔍 DEBUG: Usuwam pierwszą linię (style): '{lines[0]}'")
                     lines = lines[1:]
                 
-                return "\n".join(lines).strip()
+                final_result = "\n".join(lines).strip()
+                logger.info(f"🔍 DEBUG: Final result: {len(final_result)} chars: '{final_result[:100]}...'")
+                
+                # Jeśli po czyszczeniu nic nie zostało, zwróć original
+                if not final_result and original_text:
+                    logger.warning(f"❌ Czyszczenie usunęło całą treść! Zwracam oryginalną odpowiedź")
+                    return original_text.strip()
+                
+                return final_result
             else:
                 logger.warning("Otrzymano odpowiedź od OpenAI, ale treść wiadomości jest pusta.") # Logowanie ostrzeżenia
                 return "Błąd: Nie otrzymano poprawnej odpowiedzi od OpenAI API (brak treści w wiadomości)."
