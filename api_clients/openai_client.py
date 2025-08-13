@@ -49,9 +49,18 @@ def handle_api_error(e):
 def correct_text_openai(api_key, model, text_to_correct, instruction_prompt, system_prompt):
     """Poprawia tekst używając OpenAI API."""
     
-    # CRITICAL DEBUG - to MUSI się pojawić w logach!
-    print(f"🚨 CRITICAL: correct_text_openai CALLED with model: {model}")
-    logger.info(f"🚨 CRITICAL: correct_text_openai CALLED with model: {model}")
+    # BULLET-PROOF DEBUG - multiple methods!
+    import sys
+    try:
+        print(f"🚨 CRITICAL FUNCTION ENTRY: correct_text_openai model={model}", flush=True)
+        sys.stdout.flush()
+        logger.info(f"🚨 CRITICAL FUNCTION ENTRY: correct_text_openai model={model}")
+        # Also write to stderr for PyInstaller
+        sys.stderr.write(f"🚨 STDERR: correct_text_openai CALLED model={model}\n")
+        sys.stderr.flush()
+    except Exception as debug_err:
+        pass  # Don't let debug crash the function
+        
     if not api_key:
         logger.warning("Próba użycia OpenAI API bez klucza.") # Logowanie ostrzeżenia
         return "Błąd: Klucz API OpenAI nie został podany."
