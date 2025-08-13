@@ -1070,15 +1070,9 @@ class MultiAPICorrector(ctk.CTk):
             if len(self.api_results) > 0:
                 self.update_status(f"✅ Gotowe! Otrzymano {len(self.api_results)} wyników")
                 self.progress_label.configure(text="Wybierz najlepszy wynik i kliknij 'Użyj'")
-                
-                # Zaplanuj automatyczne ukrycie po 15 sekundach
-                self.after(15000, self.auto_hide_window)
             else:
                 self.update_status("❌ Nie otrzymano żadnych wyników")
                 self.progress_label.configure(text="Sprawdź klucze API w ustawieniach")
-                
-                # Ukryj szybciej jeśli brak wyników
-                self.after(5000, self.auto_hide_window)
     
     def cancel_single_api(self, idx):
         """Anuluje pojedyncze API."""
@@ -1086,17 +1080,6 @@ class MultiAPICorrector(ctk.CTk):
             self.cancel_flags[idx] = True
             logging.info(f"Anulowanie API {idx}")
     
-    def auto_hide_window(self):
-        """Automatyczne ukrywanie okna po zakończeniu przetwarzania."""
-        if not self.processing:  # Tylko jeśli nie ma aktywnego przetwarzania
-            logging.info("🔄 Automatyczne ukrywanie okna do pamięci")
-            
-            # Cleanup GIF animations to free RAM
-            for loader in self.api_loaders:
-                if hasattr(loader, 'cleanup'):
-                    loader.cleanup()
-            
-            self.withdraw()  # Ukryj z powrotem do pamięci RAM
     
     def cancel_all_processing(self):
         """Anuluje wszystkie przetwarzania."""
