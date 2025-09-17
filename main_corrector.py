@@ -801,7 +801,7 @@ class MultiAPICorrector(ctk.CTk):
                 return
             corr_tokens = [m.group() for m in corr_matches]
             matcher = difflib.SequenceMatcher(None, orig_tokens, corr_tokens)
-            widget.tag_config("diff_highlight", underline=True, foreground="#d93025")
+            widget.tag_config("diff_highlight", underline=1, foreground="#d93025")
             for tag, _i1, _i2, j1, j2 in matcher.get_opcodes():
                 if tag not in ("replace", "insert"):
                     continue
@@ -1386,10 +1386,11 @@ class SettingsWindow(ctk.CTkToplevel):
         self.title("Ustawienia API")
         
         parent.update_idletasks()
-        parent_width = max(parent.winfo_width(), 800)
-        parent_height = max(parent.winfo_height(), 600)
-        settings_width = max(400, int(parent_width * 0.4))
-        settings_height = max(500, int(parent_height * 0.7))
+        parent_width = max(parent.winfo_width(), 900)
+        parent_height = max(parent.winfo_height(), 700)
+        scale = getattr(parent, "scale_factor", 1.0) or 1.0
+        settings_width = max(int(520 * scale), int(parent_width * 0.45))
+        settings_height = max(int(520 * scale), int(parent_height * 0.75))
         
         # Wyśrodkuj względem rodzica
         parent_x = parent.winfo_x()
@@ -1829,18 +1830,16 @@ class SettingsWindow(ctk.CTkToplevel):
                     # Fallback to default
                     self.parent.models[api_key] = get_default_model(api_key)
             
-            # Collect AI settings
             ai_settings = {
                 "ReasoningEffort": self.reasoning_combo.get(),
                 "Verbosity": self.verbosity_combo.get()
             }
 
-            highlight_flag = '1' if self.highlight_var.get() else '0'
-            settings_payload = {
-                "AutoStartup": self.parent.settings.get("AutoStartup", '0'),
-                "DefaultStyle": self.parent.settings.get("DefaultStyle", 'normal'),
-                "HighlightDiffs": highlight_flag,
-            }
+            base_settings = dict(self.parent.settings)
+            base_settings.setdefault("AutoStartup", '0')
+            base_settings.setdefault("DefaultStyle", 'normal')
+            base_settings["HighlightDiffs"] = '1' if self.highlight_var.get() else '0'
+            settings_payload = {k: str(v) for k, v in base_settings.items()}
 
             config_manager.save_config(
                 self.parent.api_keys,
@@ -1849,11 +1848,9 @@ class SettingsWindow(ctk.CTkToplevel):
                 ai_settings
             )
 
-            self.parent.settings.update(settings_payload)
-            
-            # Reload config in parent
-            self.parent.load_config()
+            self.parent.settings = settings_payload
             self.parent.refresh_diff_highlights()
+            self.parent.update_status("✅ Ustawienia zapisane")
             
             # Show success message
             messagebox.showinfo("Sukces", "Ustawienia zostały zapisane", parent=self)
