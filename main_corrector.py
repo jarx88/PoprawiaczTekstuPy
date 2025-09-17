@@ -1385,9 +1385,9 @@ class SettingsWindow(ctk.CTkToplevel):
         
         self.title("Ustawienia API")
         
-        # Oblicz rozmiar względem głównego okna
-        parent_width = parent.winfo_width()
-        parent_height = parent.winfo_height()
+        parent.update_idletasks()
+        parent_width = max(parent.winfo_width(), 800)
+        parent_height = max(parent.winfo_height(), 600)
         settings_width = max(400, int(parent_width * 0.4))
         settings_height = max(500, int(parent_height * 0.7))
         
@@ -1835,15 +1835,21 @@ class SettingsWindow(ctk.CTkToplevel):
                 "Verbosity": self.verbosity_combo.get()
             }
 
-            self.parent.settings['HighlightDiffs'] = '1' if self.highlight_var.get() else '0'
-            
-            # Save to file
+            highlight_flag = '1' if self.highlight_var.get() else '0'
+            settings_payload = {
+                "AutoStartup": self.parent.settings.get("AutoStartup", '0'),
+                "DefaultStyle": self.parent.settings.get("DefaultStyle", 'normal'),
+                "HighlightDiffs": highlight_flag,
+            }
+
             config_manager.save_config(
                 self.parent.api_keys,
                 self.parent.models,
-                self.parent.settings,
+                settings_payload,
                 ai_settings
             )
+
+            self.parent.settings.update(settings_payload)
             
             # Reload config in parent
             self.parent.load_config()
