@@ -19,6 +19,7 @@ class ThreadSafeHotkeyProcessor:
         self.main_window_callback: Optional[Callable] = None
         self.hotkey_registered = False
         self.running = False
+        self.clipboard_processing_delay: Optional[float] = 0.4  # seconds
         
     def start_worker(self):
         """Uruchamia worker thread dla przetwarzania queue."""
@@ -64,14 +65,12 @@ class ThreadSafeHotkeyProcessor:
         """
         try:
             logger.debug("Simulating Ctrl+C...")
-            
-            # Import keyboard dla symulacji (zachowujemy dla compatibility)
-            import keyboard as kb
-            
-            kb.press('ctrl')
-            kb.press('c')
-            kb.release('c')
-            kb.release('ctrl')
+            controller = keyboard.Controller()
+
+            controller.press(keyboard.Key.ctrl)
+            controller.press('c')
+            controller.release('c')
+            controller.release(keyboard.Key.ctrl)
             
             # Zwiększony timing dla pewności kopiowania
             time.sleep(0.3)  # Zmienione z 0.1s na 0.3s
@@ -108,9 +107,14 @@ class ThreadSafeHotkeyProcessor:
             
             # Zaplanuj przetwarzanie schowka z opóźnieniem
             # Używamy threading.Timer zamiast QTimer (bo jesteśmy poza Qt thread)
-            clipboard_timer = threading.Timer(0.4, self._schedule_clipboard_processing)
-            clipboard_timer.daemon = True
-            clipboard_timer.start()
+            delay = self.clipboard_processing_delay
+            if delay is None or delay <= 0:
+                logger.debug("Clipboard delay disabled -> scheduling immediate processing")
+                self._schedule_clipboard_processing()
+            else:
+                clipboard_timer = threading.Timer(delay, self._schedule_clipboard_processing)
+                clipboard_timer.daemon = True
+                clipboard_timer.start()
             
         except Exception as e:
             logger.error(f"Hotkey callback error: {e}", exc_info=True)
@@ -201,6 +205,22 @@ class ThreadSafeHotkeyProcessor:
         """
         logger.info(f"Hotkey changed to: {hotkey_combo}")
         # TODO: Implement Qt notification in main window
+
+    def set_clipboard_delay(self, delay_seconds: Optional[float]):
+        """Ustawia opóźnienie przed przetwarzaniem schowka."""
+        if delay_seconds is None:
+            self.clipboard_processing_delay = None
+            logger.info("Clipboard processing delay disabled - processing immediately")
+            return
+
+        try:
+            delay_seconds = max(0.0, float(delay_seconds))
+        except (TypeError, ValueError):
+            logger.warning("Invalid clipboard delay value: %s", delay_seconds)
+            return
+
+        self.clipboard_processing_delay = delay_seconds
+        logger.info("Clipboard processing delay set to %.3fs", self.clipboard_processing_delay)
     
     def cleanup(self):
         """Cleanup resources przy zamykaniu aplikacji."""

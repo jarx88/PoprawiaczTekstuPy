@@ -8,7 +8,14 @@ from httpx import HTTPError, TimeoutException
 from utils.logger import log_api_error, log_connection_error, log_timeout_error, logger
 # PyQt6 removed - using CustomTkinter GUI now
 from gui.prompts import get_system_prompt
-from .base_client import DEFAULT_TIMEOUT, QUICK_TIMEOUT, CONNECTION_TIMEOUT, DEFAULT_RETRIES, APITimeoutError
+from .base_client import (
+    DEFAULT_TIMEOUT,
+    QUICK_TIMEOUT,
+    CONNECTION_TIMEOUT,
+    DEFAULT_RETRIES,
+    APITimeoutError,
+)
+import threading
 
 def show_connection_error():
     """Log connection error - GUI now handled by main application"""
@@ -23,10 +30,12 @@ def handle_api_error(e):
     return False
 
 def correct_text_gemini(api_key, model, text_to_correct, instruction_prompt, system_prompt, on_chunk=None):
+    """Poprawia tekst używając Google Gemini API."""
     # Określenie stylu na podstawie zawartości instruction_prompt
     style = "prompt" if "prompt" in instruction_prompt.lower() else "normal"
-    system_prompt = get_system_prompt(style)
-    """Poprawia tekst używając Google Gemini API."""
+    system_instruction = get_system_prompt(style)
+    if system_prompt:
+        system_instruction = system_prompt
     if not api_key:
         logger.warning("Próba użycia Google Gemini API bez klucza.") # Logowanie ostrzeżenia
         return "Błąd: Klucz API Google Gemini nie został podany."
@@ -46,9 +55,11 @@ def correct_text_gemini(api_key, model, text_to_correct, instruction_prompt, sys
         # Konfiguracja modelu z krótszym timeoutem
         generation_config = {
             "temperature": 0.7,
-            "top_p": 1,
-            "top_k": 1,
-            "max_output_tokens": 2048,
+            "top_p": 0.9,
+            "top_k": 32,
+            "candidate_count": 1,
+            "max_output_tokens": 3072,
+            "response_mime_type": "text/plain",
         }
         
         safety_settings = [
@@ -70,14 +81,24 @@ def correct_text_gemini(api_key, model, text_to_correct, instruction_prompt, sys
             }
         ]
         
-        full_prompt = f"{system_prompt}\n\n{instruction_prompt}\n\n---\n{text_to_correct}\n---"
-        
+        user_parts = [
+            {"text": instruction_prompt},
+            {"text": text_to_correct},
+        ]
+        contents = [
+            {
+                "role": "user",
+                "parts": user_parts,
+            }
+        ]
+
         # Check if GenerativeModel is available (version compatibility)
         try:
             gemini_model = genai.GenerativeModel(
                 model_name=model,
                 generation_config=generation_config,
-                safety_settings=safety_settings
+                safety_settings=safety_settings,
+                system_instruction=system_instruction,
             )
         except AttributeError as e:
             logger.error(f"Gemini API GenerativeModel not available: {e}")
@@ -85,82 +106,21 @@ def correct_text_gemini(api_key, model, text_to_correct, instruction_prompt, sys
         except Exception as e:
             logger.error(f"Gemini API model creation failed: {e}")
             return f"Błąd: Nie można utworzyć modelu Gemini: {e}"
-        
-        # Streaming jeśli dostępny i podano callback on_chunk
-        response = None
-        if callable(on_chunk) and hasattr(gemini_model, 'generate_content'):
-            try:
-                stream = gemini_model.generate_content(full_prompt, stream=True)
-                collected = []
-                for event in stream:
-                    try:
-                        # SDK emituje części; spróbuj wyciągnąć tekst
-                        if hasattr(event, 'text') and event.text:
-                            text_chunk = event.text
-                            collected.append(text_chunk)
-                            
-                            # Jeśli fragment jest bardzo długi, podziel go na mniejsze części
-                            if len(text_chunk) > 50:  # Długie fragmenty dziel na kawałki
-                                words = text_chunk.split()
-                                chunk_size = max(3, len(words) // 10)  # ~10 części
-                                for i in range(0, len(words), chunk_size):
-                                    mini_chunk = ' '.join(words[i:i + chunk_size])
-                                    if mini_chunk:
-                                        try:
-                                            on_chunk(mini_chunk + ' ')
-                                        except Exception:
-                                            pass
-                                        import time
-                                        time.sleep(0.05)  # Krótkie opóźnienie dla efektu streamingu
-                            else:
-                                try:
-                                    on_chunk(text_chunk)
-                                except Exception:
-                                    pass
-                    except Exception:
-                        continue
-                # Po streamie zbuduj pseudo-response
-                class _Resp:
-                    def __init__(self, text):
-                        self.text = text
-                response = _Resp("".join(collected))
-            except Exception as e:
-                logger.warning(f"Gemini streaming failed, fallback to non-streaming: {e}")
-        
-        if response is None:
-            # WAŻNE: Gemini SDK nie obsługuje timeout bezpośrednio, więc używamy wątku
-            import threading
-            result = [None]
-            exception = [None]
-            
-            def make_request():
-                try:
-                    result[0] = gemini_model.generate_content(full_prompt)
-                except AttributeError as e:
-                    # Handle Gemini API version compatibility issues
-                    if "GenerativeModel" in str(e) or "generate_content" in str(e):
-                        logger.error(f"Gemini API version compatibility issue: {e}")
-                        exception[0] = Exception(f"Gemini API niekompatybilna wersja: {e}")
-                    else:
-                        exception[0] = e
-                except Exception as e:
-                    exception[0] = e
 
-            thread = threading.Thread(target=make_request)
-            thread.daemon = True
-            thread.start()
-            thread.join(timeout=DEFAULT_TIMEOUT)
-            
-            if thread.is_alive():
-                logger.error(f"Timeout Gemini API: przekroczono {DEFAULT_TIMEOUT}s")
-                return f"Błąd: Gemini API nie odpowiada (timeout {DEFAULT_TIMEOUT}s). Spróbuj ponownie."
-            
-            if exception[0]:
-                raise exception[0]
-            
-            response = result[0]
+        try:
+            token_info = gemini_model.count_tokens(contents)
+            total_tokens = getattr(token_info, "total_tokens", None)
+            input_tokens = getattr(token_info, "input_tokens", None)
+            logger.debug(
+                "Gemini token estimate -> total: %s, input: %s",
+                total_tokens,
+                input_tokens,
+            )
+        except Exception as token_error:
+            logger.debug(f"Gemini count_tokens failed: {token_error}")
 
-        # Spróbuj bezpiecznie zbudować tekst z candidates -> content -> parts -> text
+        request_options = {"timeout": DEFAULT_TIMEOUT}
+
         def extract_text(resp):
             try:
                 if getattr(resp, 'text', None):
@@ -183,6 +143,77 @@ def correct_text_gemini(api_key, model, text_to_correct, instruction_prompt, sys
             except Exception:
                 return ""
 
+        # Streaming jeśli dostępny i podano callback on_chunk
+        response = None
+        if callable(on_chunk) and hasattr(gemini_model, 'generate_content'):
+            try:
+                collected = []
+                with gemini_model.generate_content(
+                    contents,
+                    stream=True,
+                    request_options=request_options,
+                ) as stream:
+                    for event in stream:
+                        try:
+                            text_chunk = extract_text(event) or getattr(event, 'text', '')
+                        except Exception:
+                            text_chunk = ''
+                        if not text_chunk:
+                            continue
+                        collected.append(text_chunk)
+                        try:
+                            on_chunk(text_chunk)
+                        except Exception:
+                            pass
+                    try:
+                        response = stream.get_final_response()
+                    except Exception:
+                        response = None
+                if response is None and collected:
+                    class _StreamResponse:
+                        def __init__(self, text):
+                            self.text = text
+
+                    response = _StreamResponse("".join(collected))
+            except Exception as e:
+                logger.warning(f"Gemini streaming failed, fallback to non-streaming: {e}")
+
+        if response is None:
+            # WAŻNE: Gemini SDK nie obsługuje timeout bezpośrednio, więc używamy wątku
+            result = [None]
+            exception = [None]
+            
+            def make_request():
+                try:
+                    result[0] = gemini_model.generate_content(
+                        contents,
+                        request_options=request_options,
+                    )
+                except AttributeError as e:
+                    # Handle Gemini API version compatibility issues
+                    if "GenerativeModel" in str(e) or "generate_content" in str(e):
+                        logger.error(f"Gemini API version compatibility issue: {e}")
+                        exception[0] = Exception(f"Gemini API niekompatybilna wersja: {e}")
+                    else:
+                        exception[0] = e
+                except Exception as e:
+                    exception[0] = e
+
+            thread = threading.Thread(target=make_request)
+            thread.daemon = True
+            thread.start()
+            thread.join(timeout=DEFAULT_TIMEOUT + 5)
+            
+            if thread.is_alive():
+                logger.error(f"Timeout Gemini API: przekroczono {DEFAULT_TIMEOUT + 5}s")
+                return f"Błąd: Gemini API nie odpowiada (timeout {DEFAULT_TIMEOUT + 5}s). Spróbuj ponownie."
+            
+            if exception[0]:
+                raise exception[0]
+            
+            response = result[0]
+
+        # Spróbuj bezpiecznie zbudować tekst z candidates -> content -> parts -> text
         extracted = (extract_text(response) or '').strip()
         if extracted:
             logger.info("Otrzymano poprawną odpowiedź od Google Gemini API.")

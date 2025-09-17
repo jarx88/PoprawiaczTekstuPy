@@ -190,6 +190,7 @@ class MultiAPICorrector(ctk.CTk):
         self.result_update_guard = {}  # klucz: (session_id, idx) -> bool
         self.paste_in_progress = False
         self._stream_started_indices = set()
+        self.api_names = ["OpenAI", "Anthropic", "Gemini", "DeepSeek"]
         
         # UI - zbuduj cały interfejs
         self.setup_ui()
@@ -374,7 +375,6 @@ class MultiAPICorrector(ctk.CTk):
         self.api_loader_frames = []
         
         # Oryginalne kolory z PyQt6 aplikacji
-        api_names = ["OpenAI", "Anthropic", "Gemini", "DeepSeek"]
         api_colors = {
             "OpenAI": "#10a37f",     # Zielony OpenAI
             "Anthropic": "#d97706",   # Pomarańczowy Anthropic
@@ -382,7 +382,7 @@ class MultiAPICorrector(ctk.CTk):
             "DeepSeek": "#7c3aed"     # Fioletowy DeepSeek
         }
         
-        for i, name in enumerate(api_names):
+        for i, name in enumerate(self.api_names):
             row = i // 2
             col = i % 2
             color = api_colors[name]
@@ -577,7 +577,7 @@ class MultiAPICorrector(ctk.CTk):
             
             # Sprawdź które API są skonfigurowane
             configured = []
-            for api in ["OpenAI", "Anthropic", "Gemini", "DeepSeek"]:
+            for api in self.api_names:
                 if self.api_keys.get(api, ""):
                     configured.append(api)
             
@@ -670,79 +670,48 @@ class MultiAPICorrector(ctk.CTk):
         # Okno pozostaje otwarte do momentu wyboru wyniku lub anulowania
     
     def _show_gui_and_process(self, clipboard_text):
-        """Pokazuje GUI i rozpoczyna przetwarzanie - wywołane po udanym kopiowaniu."""
+        """Pokazuje GUI i rozpoczyna przetwarzanie po udanym kopiowaniu."""
         logging.info("🔧 Preparing loading state BEFORE showing GUI...")
-        
-        # 1. PRZYGOTÓJ cały loading state PODCZAS gdy okno jest ukryte
-        self._prepare_loading_state_hidden(clipboard_text)
-        
-        # 2. PRE-RENDER wszystko 
-        self.update_idletasks()
-        
-        # 3. DOPIERO teraz pokaż okno - już w pełni przygotowane!
-        self.deiconify()
-        self.lift()
-        self.focus_force()
-        
-        logging.info("🎉 GUI shown with PRE-RENDERED loading state!")
-        
-        # 4. Uruchom rzeczywiste API processing (UI już przygotowane)
-        self.after(1, lambda: self._start_api_threads(clipboard_text))
-    
-    def _prepare_loading_state_hidden(self, clipboard_text):
-        """Przygotowuje loading state podczas gdy okno jest ukryte - zero flickering!"""
-        # Setup processing flags
+        self.process_text_multi_api(clipboard_text, force_show=True)
+
+    def _prepare_processing_session(self, text, status_message):
+        """Resetuje UI i ustawia wszystkie panele w stan ładowania."""
         self.processing = True
         self.api_results = {}
-        self.cancel_flags = {}  # Reset flag anulowania
-        self.current_session_id += 1  # Nowa sesja
-        # Reset stream flags per session
+        self.cancel_flags = {}
+        self.current_session_id += 1
         self._stream_started_indices.clear()
-        
-        # Store text
-        self.original_text = clipboard_text
-        
-        # Update status and session info
-        self.update_status("📝 Przetwarzanie tekstu...")
+        self.original_text = text
+
+        self.update_status(status_message)
         self.session_label.configure(text=f"📝 Sesja: {self.current_session_id}")
-        self.progress_label.configure(text=f"Tekst: {len(clipboard_text)} znaków")
+        self.progress_label.configure(text=f"Tekst: {len(text)} znaków")
         self.api_counter_label.configure(text="🤖 API: 0/4")
-        
-        # Przygotuj wszystkie 4 panele API w loading state
-        for i in range(4):
-            # Clear and prepare text widget
-            self.api_text_widgets[i].configure(state="normal")
-            self.api_text_widgets[i].delete("1.0", "end")
-            self.api_text_widgets[i].insert("1.0", "🔄 Przygotowanie...")
-            self.api_text_widgets[i].configure(state="disabled")
-            
-            # Show loader frame (hide text widget)
-            self.api_text_widgets[i].place_forget()
-            self.api_loader_frames[i].place(relx=0, rely=0, relwidth=1, relheight=1)
-            
-            # Start animation jeśli to AnimatedGIF (lazy loading!)
-            if hasattr(self.api_loaders[i], 'start'):
-                self.api_loaders[i].start()
-            
-            # Show and start progress bar - determinate mode z manual update
-            self.api_progress_bars[i].pack(side="right", padx=5, fill="x", expand=True)
-            self.api_progress_bars[i].set(0)
-            # NIE używamy start() - będziemy ręcznie aktualizować
-            
-            # Enable cancel button
+
+        for i, api_name in enumerate(self.api_names):
+            text_widget = self.api_text_widgets[i]
+            text_widget.configure(state="normal")
+            text_widget.delete("1.0", "end")
+            text_widget.insert("1.0", "🔄 Przygotowanie...")
+            text_widget.configure(state="disabled")
+            text_widget.place_forget()
+
+            loader_frame = self.api_loader_frames[i]
+            loader_frame.place(relx=0, rely=0, relwidth=1, relheight=1)
+
+            loader = self.api_loaders[i]
+            if hasattr(loader, 'start'):
+                loader.start()
+
+            progress_bar = self.api_progress_bars[i]
+            progress_bar.pack(side="right", padx=5, fill="x", expand=True)
+            progress_bar.set(0)
+
             self.api_cancel_buttons[i].configure(state="normal")
-            
-            # Disable use button
             self.api_buttons[i].configure(state="disabled")
-            
-            # Setup label
-            api_name = ["OpenAI", "Anthropic", "Gemini", "DeepSeek"][i]
             self.api_labels[i].configure(text=f"🤖 {api_name}")
-        
-        # Enable cancel all button
+
         self.cancel_all_button.configure(state="normal")
-        
-        logging.info("🚀 Loading state prepared while hidden - ready for instant show!")
 
     def _append_partial(self, idx, chunk_text, session_id):
         """Bezpiecznie dokleja fragment strumienia do panelu API w aktualnej sesji."""
@@ -799,9 +768,13 @@ class MultiAPICorrector(ctk.CTk):
             (3, "DeepSeek", deepseek_client.correct_text_deepseek)
         ]
         
-        # CRITICAL DEBUG - sprawdź co jest w apis (first occurrence)
+        # Debug: podgląd przypisanych funkcji API
         for idx, api_name, api_func in apis:
-            logging.info(f"🚨 CRITICAL: apis[{idx}] {api_name} -> {api_func.__name__ if hasattr(api_func, '__name__') else api_func}")
+            logging.debug(
+                "API slot %s -> %s",
+                idx,
+                api_func.__name__ if hasattr(api_func, '__name__') else api_func,
+            )
         
         for idx, api_name, api_func in apis:
             if self.api_keys.get(api_name):
@@ -857,87 +830,32 @@ class MultiAPICorrector(ctk.CTk):
         logging.error("All clipboard copy attempts failed")
         return ""
     
-    def process_text_multi_api(self, text):
+    def process_text_multi_api(self, text, force_show=False):
         """Przetwarza tekst używając wszystkich 4 API równocześnie."""
         if self.processing and not self.cancel_flags:
-            # Jeśli już przetwarza ale nie anulowano
             self.update_status("⚠️ Już przetwarzam...")
             return
-        
-        self.processing = True
-        self.api_results = {}
-        self.cancel_flags = {}  # Reset flag anulowania
-        self.current_session_id += 1  # Nowa sesja
-        
-        # Update session info
-        self.session_label.configure(text=f"📝 Sesja: {self.current_session_id}")
-        
-        # Pre-render UI przed zmianami
-        self.update_idletasks()
-        
-        # Przygotuj panele
-        for i in range(4):
-            # Wyczyść tekst
-            self.api_text_widgets[i].configure(state="normal")
-            self.api_text_widgets[i].delete("1.0", "end")
-            self.api_text_widgets[i].insert("1.0", "🔄 Przygotowanie...")
-            self.api_text_widgets[i].configure(state="disabled")
-            
-            # Pokaż loader frame z animacją (ukryj text widget)
-            self.api_text_widgets[i].place_forget()
-            self.api_loader_frames[i].place(relx=0, rely=0, relwidth=1, relheight=1)
-            
-            # Start animation jeśli to AnimatedGIF
-            if hasattr(self.api_loaders[i], 'start'):
-                self.api_loaders[i].start()
-            
-            # Pokaż i uruchom progress bar - determinate mode z manual update
-            self.api_progress_bars[i].pack(side="right", padx=5, fill="x", expand=True)
-            self.api_progress_bars[i].set(0)
-            # NIE używamy start() - będziemy ręcznie aktualizować
-            
-            # Enable cancel button
-            self.api_cancel_buttons[i].configure(state="normal")
-            
-            # Disable use button
-            self.api_buttons[i].configure(state="disabled")
-            
-            # Reset label
-            api_name = ["OpenAI", "Anthropic", "Gemini", "DeepSeek"][i]
-            self.api_labels[i].configure(text=f"🤖 {api_name}")
-        
-        # Enable cancel all button
-        self.cancel_all_button.configure(state="normal")
-        
-        self.update_status("🔄 Wysyłanie do 4 API równocześnie...")
-        self.progress_label.configure(text=f"Tekst: {len(text)} znaków")
-        self.api_counter_label.configure(text="🤖 API: 0/4")
-        
-        # Uruchom wątki dla każdego API
-        self.api_threads = {}
-        session_id = self.current_session_id
-        
-        apis = [
-            (0, "OpenAI", openai_client.correct_text_openai),
-            (1, "Anthropic", anthropic_client.correct_text_anthropic),
-            (2, "Gemini", gemini_client.correct_text_gemini),
-            (3, "DeepSeek", deepseek_client.correct_text_deepseek)
-        ]
-        
-        for idx, api_name, api_func in apis:
-            if self.api_keys.get(api_name):
-                logging.info(f"🔍 DEBUG: Starting thread for {api_name} with model: {self.models.get(api_name, 'unknown')}")
-                self.cancel_flags[idx] = False  # Flaga anulowania
-                thread = threading.Thread(
-                    target=self._process_single_api,
-                    args=(idx, api_name, api_func, text, session_id),
-                    daemon=True
-                )
-                thread.start()
-                self.api_threads[idx] = thread
-            else:
-                logging.info(f"🔍 DEBUG: Skipping {api_name} - no API key")
-                self._update_api_result(idx, f"❌ Brak klucza API dla {api_name}", True, 0, session_id)
+
+        window_visible = bool(self.winfo_viewable())
+        should_show = force_show or not window_visible
+        status_message = "📝 Przetwarzanie tekstu..." if should_show else "🔄 Wysyłanie do 4 API równocześnie..."
+
+        self._prepare_processing_session(text, status_message)
+
+        if should_show:
+            self.update_idletasks()
+            self.deiconify()
+            self.lift()
+            self.focus_force()
+            self.attributes('-topmost', True)
+            self.after(100, lambda: self.attributes('-topmost', False))
+
+        def launch_threads():
+            if status_message != "🔄 Wysyłanie do 4 API równocześnie...":
+                self.update_status("🔄 Wysyłanie do 4 API równocześnie...")
+            self._start_api_threads(text)
+
+        self.after(1, launch_threads)
     
     def _process_single_api(self, idx, api_name, api_func, text, session_id):
         """Przetwarza tekst w pojedynczym API (w wątku)."""
@@ -964,18 +882,37 @@ class MultiAPICorrector(ctk.CTk):
                     system_prompt = get_system_prompt("normal")
                     
                     logging.info(f"🔍 DEBUG: Calling {api_name} API function with model: {self.models.get(api_name, '')}")
-                    logging.info(f"🚨 CRITICAL: About to call api_func: {api_func}")
-                    logging.info(f"🚨 CRITICAL: api_func type: {type(api_func)}")
-                    logging.info(f"🚨 CRITICAL: api_func.__name__: {getattr(api_func, '__name__', 'NO_NAME')}")
+                    logging.debug("Calling %s via %s", api_name, api_func)
+                    logging.debug("api_func type: %s", type(api_func))
+                    logging.debug(
+                        "api_func.__name__: %s",
+                        getattr(api_func, '__name__', 'NO_NAME'),
+                    )
                     
                     # Call API with correct arguments: (api_key, model, text, instruction_prompt, system_prompt[, on_chunk])
-                    logging.info(f"🚨 CALL BEFORE: Wywołuję {api_name} z argumentami: key={len(self.api_keys[api_name])} chars, model={self.models.get(api_name, '')}, text={len(text)} chars")
+                    logging.debug(
+                        "Invoking %s with key=%s chars, model=%s, text_len=%s",
+                        api_name,
+                        len(self.api_keys[api_name]),
+                        self.models.get(api_name, ''),
+                        len(text),
+                    )
                     
                     # DIRECT INSPECTION of the function being called
                     if api_name == "OpenAI":
-                        logging.info(f"🚨 DIRECT: Calling OpenAI function at memory {hex(id(api_func))}")
-                        logging.info(f"🚨 DIRECT: Function source file: {getattr(api_func, '__code__', {}).co_filename if hasattr(api_func, '__code__') else 'NO_CODE'}")
-                        logging.info(f"🚨 DIRECT: Function line number: {getattr(api_func, '__code__', {}).co_firstlineno if hasattr(api_func, '__code__') else 'NO_LINE'}")
+                        logging.debug("OpenAI function memory address: %s", hex(id(api_func)))
+                        logging.debug(
+                            "OpenAI function source: %s",
+                            getattr(api_func, '__code__', {}).co_filename
+                            if hasattr(api_func, '__code__')
+                            else 'NO_CODE',
+                        )
+                        logging.debug(
+                            "OpenAI function first line: %s",
+                            getattr(api_func, '__code__', {}).co_firstlineno
+                            if hasattr(api_func, '__code__')
+                            else 'NO_LINE',
+                        )
                     
                     # Jeżeli klient wspiera streaming (on_chunk), przekaż callback
                     callback = (lambda ch, i=idx, s=session_id: self._append_partial(i, ch, s))
@@ -1100,7 +1037,7 @@ class MultiAPICorrector(ctk.CTk):
         self.after(idx * 30, update_panel)
         
         # Store result and enable button if success
-        api_name = ["OpenAI", "Anthropic", "Gemini", "DeepSeek"][idx]
+        api_name = self.api_names[idx]
         
         if not is_error:
             self.api_results[idx] = result
@@ -1183,7 +1120,7 @@ class MultiAPICorrector(ctk.CTk):
             self.api_buttons[i].configure(state="disabled")
             
             # Reset labels
-            api_name = ["OpenAI", "Anthropic", "Gemini", "DeepSeek"][i]
+            api_name = self.api_names[i]
             self.api_labels[i].configure(text=f"🤖 {api_name}")
         
         self.processing = False
@@ -1227,7 +1164,7 @@ class MultiAPICorrector(ctk.CTk):
         paste_thread.start()
         
         # Update status
-        api_name = ["OpenAI", "Anthropic", "Gemini", "DeepSeek"][idx]
+        api_name = self.api_names[idx]
         self.update_status(f"✅ Użyto tekstu z {api_name} i wklejono")
         
         logging.info(f"Użyto wyniku z {api_name}, wykonano auto-paste")
@@ -1246,16 +1183,21 @@ class MultiAPICorrector(ctk.CTk):
             logging.info("❌ Anulowanie wszystkich API przed ukryciem okna")
             self.cancel_all_processing()
             
-            # Daj krótki czas na anulowanie
-            time.sleep(0.2)
-        
+            # Daj UI czas na odświeżenie zanim schowamy okno
+            self.after(200, self._complete_minimize_to_tray)
+            return
+
+        self._complete_minimize_to_tray()
+
+    def _complete_minimize_to_tray(self):
+        """Wykonuje właściwe ukrycie okna i sprzątanie zasobów."""
         # Cleanup GIF-y żeby zwolnić RAM
         for loader in self.api_loaders:
             if hasattr(loader, 'cleanup'):
                 loader.cleanup()
-        
+
         self.withdraw()
-        
+
         if tray_icon:
             # Pokaż notyfikację
             try:
@@ -1263,7 +1205,7 @@ class MultiAPICorrector(ctk.CTk):
                     "PoprawiaczTekstuPy",
                     "Aplikacja działa w tle. Ctrl+Shift+C aby poprawić tekst."
                 )
-            except:
+            except Exception:
                 pass
     
     def paste_and_process(self):
@@ -1280,8 +1222,8 @@ class MultiAPICorrector(ctk.CTk):
             
             logging.info(f"Przetwarzanie tekstu ze schowka: {len(clipboard_text)} znaków")
             self.original_text = clipboard_text
-            self.show_window()  # Pokaż okno
-            self.process_text_multi_api(clipboard_text)
+            # Przygotuj stany loaderów zanim okno zostanie ponownie pokazane, aby uniknąć migotania.
+            self._show_gui_and_process(clipboard_text)
             
         except Exception as e:
             logging.error(f"Błąd wklejania tekstu: {e}")
@@ -1598,7 +1540,7 @@ class SettingsWindow(ctk.CTkToplevel):
     def load_all_models_async(self):
         """Ładuje modele dla wszystkich API asynchronicznie."""
         async def load_models():
-            for provider in ["OpenAI", "Anthropic", "Gemini", "DeepSeek"]:
+            for provider in self.api_names:
                 api_key = self.entries[provider].get().strip()
                 if api_key:
                     await self.refresh_models_async(provider, api_key)
@@ -1936,7 +1878,30 @@ def setup_global_hotkey(app):
     
     try:
         hotkey_processor = get_hotkey_processor()
-        
+
+        # Konfiguracja opóźnienia przetwarzania schowka (ms w config)
+        delay_setting = None
+        if hasattr(app, 'settings'):
+            delay_setting = app.settings.get('ClipboardProcessingDelayMs')
+
+        if isinstance(delay_setting, str):
+            normalized = delay_setting.strip().lower()
+            if normalized in {"off", "disabled", "none"}:
+                hotkey_processor.set_clipboard_delay(None)
+            else:
+                try:
+                    hotkey_processor.set_clipboard_delay(float(delay_setting) / 1000.0)
+                except ValueError:
+                    logging.warning(
+                        "Invalid ClipboardProcessingDelayMs value '%s' - using default",
+                        delay_setting,
+                    )
+                    hotkey_processor.set_clipboard_delay(0.4)
+        elif isinstance(delay_setting, (int, float)):
+            hotkey_processor.set_clipboard_delay(float(delay_setting) / 1000.0)
+        else:
+            hotkey_processor.set_clipboard_delay(0.4)
+
         def hotkey_callback():
             app.handle_hotkey_event()
         
@@ -1963,18 +1928,25 @@ def main():
     import inspect
     try:
         sig = inspect.signature(openai_client.correct_text_openai)
-        logging.info(f"🚨 SIGNATURE: openai_client.correct_text_openai{sig}")
-        logging.info(f"🚨 MODULE: {openai_client.correct_text_openai.__module__}")
-        logging.info(f"🚨 FILE: {inspect.getfile(openai_client.correct_text_openai)}")
+        logging.debug("OpenAI corrector signature: %s", sig)
+        logging.debug("OpenAI module: %s", openai_client.correct_text_openai.__module__)
+        logging.debug("OpenAI source file: %s", inspect.getfile(openai_client.correct_text_openai))
     except Exception as e:
         logging.error(f"🚨 SIGNATURE ERROR: {e}")
     
-    # CRITICAL DEBUG - sprawdź czy funkcja istnieje po importie  
-    logging.info(f"🚨 IMPORT DEBUG: openai_client.correct_text_openai exists: {hasattr(openai_client, 'correct_text_openai')}")
+    logging.debug(
+        "openai_client.correct_text_openai exists: %s",
+        hasattr(openai_client, 'correct_text_openai'),
+    )
     if hasattr(openai_client, 'correct_text_openai'):
-        logging.info(f"🚨 IMPORT DEBUG: openai_client.correct_text_openai is: {openai_client.correct_text_openai}")
+        logging.debug(
+            "openai_client.correct_text_openai ref: %s", openai_client.correct_text_openai
+        )
     else:
-        logging.error(f"🚨 IMPORT DEBUG: openai_client attributes: {dir(openai_client)}")
+        logging.error(
+            "openai_client attributes (missing correct_text_openai): %s",
+            dir(openai_client),
+        )
     
     try:
         # Tworzenie aplikacji
