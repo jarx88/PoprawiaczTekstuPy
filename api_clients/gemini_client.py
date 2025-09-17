@@ -15,7 +15,13 @@ import threading
 
 from google import genai
 from google.genai import types
-from google.genai import errors as genai_errors
+try:  # pragma: no cover - optional import guard during build steps
+    from google.genai import errors as genai_errors
+except Exception:  # pragma: no cover - fallback for environments without google-genai
+    genai_errors = None
+
+ClientError = getattr(genai_errors, "ClientError", Exception)
+APIError = getattr(genai_errors, "APIError", Exception)
 
 from gui.prompts import get_system_prompt
 from utils.logger import log_api_error, log_connection_error, logger
@@ -153,10 +159,10 @@ def correct_text_gemini(
             return "Błąd: Gemini nie zwrócił treści w odpowiedzi."
         return final_text.strip()
 
-    except genai_errors.ClientError as err:
+    except ClientError as err:
         log_api_error("Gemini", err)
         return f"Błąd Gemini (HTTP {getattr(err, 'code', '??')}): {err}"
-    except genai_errors.GoogleAPICallError as err:
+    except APIError as err:
         log_connection_error("Gemini", err)
         return f"Błąd Gemini (połączenie): {err}"
     except Exception as err:  # pragma: no cover - catch-all for SDK regressions
