@@ -15,7 +15,7 @@ a = Analysis(
     ['main.py'],
     pathex=[PROJECT_ROOT],
     binaries=pyqt6_binaries,
-    datas=[('assets', 'assets')] + pyqt6_datas,
+    datas=[('assets', 'assets'), ('VERSION', '.')] + pyqt6_datas,
     hiddenimports=[
         'PyQt6.QtCore',
         'PyQt6.QtGui', 
@@ -30,6 +30,9 @@ a = Analysis(
         'httpx',
         'openai',
         'anthropic',
+        'google.generativeai',
+        'google.genai',
+        'google.genai.types',
         'utils.hotkey_manager',
         'utils.config_manager',
         'utils.clipboard_manager',

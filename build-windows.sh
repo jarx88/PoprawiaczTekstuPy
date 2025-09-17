@@ -136,6 +136,7 @@ httpx>=0.24.0
 openai>=1.0.0
 anthropic>=0.5.0
 google-generativeai>=0.3.0
+google-genai>=0.4.0
 certifi>=2023.7.22
 urllib3>=2.0.0
 idna>=3.4

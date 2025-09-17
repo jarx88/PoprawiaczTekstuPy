@@ -8,8 +8,17 @@ import logging
 from typing import List, Dict, Optional
 import openai
 import anthropic
-import google.generativeai as genai
 import httpx
+
+try:  # Prefer new google-genai SDK for model listing when available
+    from google import genai as modern_genai  # type: ignore
+except Exception:  # pragma: no cover - optional dependency
+    modern_genai = None
+
+try:
+    import google.generativeai as legacy_genai  # type: ignore
+except Exception:  # pragma: no cover - optional dependency
+    legacy_genai = None
 
 
 class ModelCache:
@@ -133,63 +142,89 @@ async def fetch_anthropic_models(api_key: str) -> List[str]:
 
 
 async def fetch_gemini_models(api_key: str) -> List[str]:
-    """Pobiera listę modeli Gemini."""
-    try:
-        # Configure Gemini API
-        genai.configure(api_key=api_key)
-        
-        # List models - synchronous call wrapped in async with better error handling
-        def list_models_sync():
-            try:
-                return list(genai.list_models())
-            except AttributeError as e:
-                logging.warning(f"Gemini API version issue: {e}")
-                # Return empty list to trigger fallback
-                return []
-            except Exception as e:
-                logging.warning(f"Gemini models list error: {e}")
-                return []
-        
-        loop = asyncio.get_event_loop()
-        models_response = await loop.run_in_executor(None, list_models_sync)
-        
-        if not models_response:
-            logging.warning("No models returned from Gemini API, using fallbacks")
-            return FALLBACK_MODELS["Gemini"]
-        
-        # Filter dla generative models
-        generative_models = []
-        for model in models_response:
-            try:
-                if hasattr(model, 'supported_generation_methods') and 'generateContent' in model.supported_generation_methods:
-                    # Extract model name from full path
-                    model_name = model.name.split('/')[-1]  # models/gemini-pro -> gemini-pro
-                    generative_models.append(model_name)
-            except Exception as e:
-                logging.debug(f"Error processing model {model}: {e}")
-                continue
-        
-        if not generative_models:
-            return FALLBACK_MODELS["Gemini"]
-        
-        # Sortuj według priorytetu
+    """Pobiera listę modeli Gemini, obsługując oba SDK."""
+
+    def _sort_models(candidates: List[str]) -> List[str]:
         priority_models = ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash']
-        sorted_models = []
-        
+        sorted_models: List[str] = []
         for priority in priority_models:
-            matches = [m for m in generative_models if priority in m]
+            matches = [m for m in candidates if priority in m]
             if matches:
-                sorted_models.extend(sorted(matches, reverse=True))  # Newest first
-        
-        # Dodaj pozostałe
-        other_models = [m for m in generative_models if not any(p in m for p in priority_models)]
+                sorted_models.extend(sorted(matches, reverse=True))
+        other_models = [m for m in candidates if not any(p in m for p in priority_models)]
         sorted_models.extend(sorted(other_models, reverse=True))
-        
         return sorted_models[:15] if sorted_models else FALLBACK_MODELS["Gemini"]
-        
-    except Exception as e:
-        logging.warning(f"Nie można pobrać modeli Gemini: {e}")
-        return FALLBACK_MODELS["Gemini"]
+
+    # Prefer modern google-genai when dostępne
+    if modern_genai is not None:
+        try:
+            modern_client = modern_genai.Client(api_key=api_key)
+
+            def list_modern_sync():
+                try:
+                    return list(modern_client.models.list())
+                except Exception as exc:  # pragma: no cover - log and fallback
+                    logging.warning(f"Modern Gemini models list error: {exc}")
+                    return []
+
+            loop = asyncio.get_event_loop()
+            models_response = await loop.run_in_executor(None, list_modern_sync)
+
+            generative_models: List[str] = []
+            for model in models_response:
+                try:
+                    supported = getattr(model, 'supported_generation_methods', []) or []
+                    if supported and 'generateContent' not in supported:
+                        continue
+                    name = getattr(model, 'name', None) or getattr(model, 'model', None)
+                    if not name:
+                        continue
+                    generative_models.append(str(name).split('/')[-1])
+                except Exception as model_error:
+                    logging.debug(f"Modern Gemini model parse error: {model_error}")
+                    continue
+
+            if generative_models:
+                logging.info("Gemini models fetched via modern SDK: %s", generative_models[:3])
+                return _sort_models(generative_models)
+        except Exception as modern_error:
+            logging.warning(f"Modern Gemini SDK list failed, fallback to legacy: {modern_error}")
+
+    if legacy_genai is not None:
+        try:
+            legacy_genai.configure(api_key=api_key)
+
+            def list_legacy_sync():
+                try:
+                    return list(legacy_genai.list_models())
+                except AttributeError as exc:
+                    logging.warning(f"Gemini legacy SDK version issue: {exc}")
+                    return []
+                except Exception as exc:
+                    logging.warning(f"Gemini legacy models list error: {exc}")
+                    return []
+
+            loop = asyncio.get_event_loop()
+            models_response = await loop.run_in_executor(None, list_legacy_sync)
+
+            generative_models = []
+            for model in models_response:
+                try:
+                    if hasattr(model, 'supported_generation_methods') and 'generateContent' in model.supported_generation_methods:
+                        model_name = model.name.split('/')[-1]
+                        generative_models.append(model_name)
+                except Exception as model_error:
+                    logging.debug(f"Legacy Gemini model parse error: {model_error}")
+                    continue
+
+            if generative_models:
+                logging.info("Gemini models fetched via legacy SDK: %s", generative_models[:3])
+                return _sort_models(generative_models)
+        except Exception as legacy_error:
+            logging.warning(f"Nie można pobrać modeli Gemini (legacy): {legacy_error}")
+
+    logging.warning("No Gemini models returned via API, using fallbacks")
+    return FALLBACK_MODELS["Gemini"]
 
 
 async def fetch_deepseek_models(api_key: str) -> List[str]:

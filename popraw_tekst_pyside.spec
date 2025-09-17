@@ -9,7 +9,7 @@ a = Analysis(
     ['main_pyside.py'],
     pathex=[],
     binaries=[],
-    datas=[('assets', 'assets')],
+    datas=[('assets', 'assets'), ('VERSION', '.')],
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},

@@ -27,6 +27,7 @@ import pyperclip
 import keyboard
 from gui.prompts import get_system_prompt, get_instruction_prompt
 from utils.model_fetcher import fetch_models_for_provider, get_default_model
+from utils.build_info import get_app_version
 
 # Globalne zmienne
 main_app = None
@@ -169,7 +170,8 @@ class MultiAPICorrector(ctk.CTk):
         self.scale_factor = 1.0
         
         # Konfiguracja głównego okna
-        self.title("PoprawiaczTekstuPy - Multi-API")
+        self.app_version = get_app_version()
+        self.title(f"PoprawiaczTekstuPy - Multi-API v{self.app_version}")
         self.setup_responsive_window()
         
         # Ustaw theme
@@ -1926,8 +1928,9 @@ def main():
     global main_app
     
     setup_logging()
+    app_version = get_app_version()
     logging.info("=== PoprawiaczTekstuPy Multi-API Start ===")
-    logging.info("🔍 DEBUG BUILD VERSION: 2025-08-13-v4 (call-tracking)")
+    logging.info("🔍 Build version: %s", app_version)
     
     # Sprawdź sygnaturę funkcji OpenAI
     import inspect

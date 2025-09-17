@@ -94,6 +94,7 @@ a = Analysis(
         ('assets', 'assets'),
         ('utils', 'utils'),
         ('api_clients', 'api_clients'),
+        ('VERSION', '.'),
     ],
     hiddenimports=[
         'customtkinter',
@@ -106,6 +107,8 @@ a = Analysis(
         'openai',
         'anthropic',
         'google.generativeai',
+        'google.genai',
+        'google.genai.types',
         'certifi',
         'urllib3',
         'idna',

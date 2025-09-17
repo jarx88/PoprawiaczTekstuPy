@@ -73,7 +73,8 @@ pynput>=1.7.6
 httpx>=0.24.0
 openai>=1.0.0
 anthropic>=0.5.0
-google-generativeai==0.1.0rc1
+google-generativeai>=0.8.5
+google-genai>=0.4.0
 pyinstaller>=5.0.0
 EOF
 

@@ -7,5 +7,6 @@ httpx>=0.27.0
 openai>=1.40.0
 anthropic>=0.36.0
 google-generativeai>=0.8.5
+google-genai>=0.4.0
 pydantic>=2.7,<3
 pyinstaller>=5.0.0

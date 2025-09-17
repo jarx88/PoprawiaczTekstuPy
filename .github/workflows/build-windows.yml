@@ -38,6 +38,15 @@ jobs:
     - name: Install PyInstaller
       run: |
         pip install -U pyinstaller
+
+    - name: Write build version metadata
+      shell: pwsh
+      run: |
+        $shortSha = "${{ github.sha }}".Substring(0,7)
+        $version = "build-${{ github.run_number }}-$shortSha"
+        Set-Content -Path VERSION -Value $version
+        "POPRAWIACZTEKSTUPY_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        Write-Host "📦 Build version: $version"
         
     - name: Clean build directories and PyInstaller cache
       run: |
@@ -138,6 +147,14 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
         pip install pyinstaller>=5.0.0
+
+    - name: Write build version metadata (Linux)
+      run: |
+        short_sha="${GITHUB_SHA::7}"
+        version="build-${GITHUB_RUN_NUMBER}-${short_sha}"
+        echo "$version" > VERSION
+        echo "POPRAWIACZTEKSTUPY_VERSION=$version" >> "$GITHUB_ENV"
+        echo "📦 Build version: $version"
         
     - name: Build Linux executable
       run: |
