@@ -31,37 +31,66 @@ ChunkCallback = Callable[[str], None]
 
 @dataclass
 class _StreamingState:
-    """Tracks incremental text and logs the first emission."""
+    """Tracks streaming text and produces deltas resiliently."""
 
-    aggregated_text: str = ""
+    snapshot: str = ""
+    segments: list[str] = None
     has_emitted: bool = False
 
-    def push(self, text: str, on_chunk: Optional[ChunkCallback]) -> None:
-        if not text:
+    def __post_init__(self) -> None:
+        if self.segments is None:
+            self.segments = []
+
+    def push(self, chunk_text: str, on_chunk: Optional[ChunkCallback]) -> None:
+        if not chunk_text:
             return
+
+        if chunk_text.startswith(self.snapshot):
+            delta = chunk_text[len(self.snapshot) :]
+            new_snapshot = chunk_text
+        elif self.snapshot and self.snapshot.startswith(chunk_text):
+            # Duplicate replay of earlier content – ignore.
+            return
+        else:
+            delta = chunk_text
+            new_snapshot = self.snapshot + delta
+
+        if not delta:
+            return
+
         if not self.has_emitted:
-            logger.info("Gemini stream: pierwsza porcja tekstu (%s znaków)", len(text))
+            logger.info("Gemini stream: pierwsza porcja tekstu (%s znaków)", len(delta))
             self.has_emitted = True
-        self.aggregated_text += text
+
+        self.segments.append(delta)
+        self.snapshot = new_snapshot
+
         if callable(on_chunk):
             try:
-                on_chunk(text)
+                on_chunk(delta)
             except Exception:  # pragma: no cover - defensive
                 logger.debug("Gemini on_chunk callback raised", exc_info=True)
+
+    @property
+    def text(self) -> str:
+        if self.segments:
+            return "".join(self.segments)
+        return self.snapshot
 
 
 def _build_client(api_key: str) -> genai.Client:
     return genai.Client(api_key=api_key)
 
 
-def _build_generation_config() -> types.GenerateContentConfig:
+def _build_generation_config(system_instruction: str) -> types.GenerateContentConfig:
     return types.GenerateContentConfig(
+        system_instruction=system_instruction,
         candidate_count=1,
         max_output_tokens=3072,
         temperature=0.7,
         top_p=0.9,
         top_k=32,
-        thinking_config=types.ThinkingConfig(thinking_budget=0),  # disables extra "thinking" delay on 2.5 models
+        thinking_config=types.ThinkingConfig(thinking_budget=0),
         safety_settings=[
             types.SafetySetting(category="HARM_CATEGORY_HARASSMENT", threshold="BLOCK_NONE"),
             types.SafetySetting(category="HARM_CATEGORY_HATE_SPEECH", threshold="BLOCK_NONE"),
@@ -114,31 +143,26 @@ def correct_text_gemini(
     )
 
     client = _build_client(api_key)
-    contents = [
-        {
-            "role": "user",
-            "parts": [
-                {"text": instruction_prompt},
-                {"text": text_to_correct},
-            ],
-        }
-    ]
-
     state = _StreamingState()
 
     try:
         stream = client.models.generate_content_stream(
             model=model,
-            contents=contents,
-            config=_build_generation_config(),
-            system_instruction=system_instruction,
+            contents=[
+                types.UserContent(
+                    parts=[
+                        types.Part.from_text(instruction_prompt),
+                        types.Part.from_text(text_to_correct),
+                    ]
+                )
+            ],
+            config=_build_generation_config(system_instruction),
         )
 
-        last_chunk_text = ""
         for chunk in stream:
             if cancel_event and cancel_event.is_set():
                 _close_stream(stream)
-                return state.aggregated_text or "❌ Anulowano"
+                return state.text or "❌ Anulowano"
 
             chunk_text = getattr(chunk, "text", None)
             if not chunk_text:
@@ -150,10 +174,9 @@ def correct_text_gemini(
                     except Exception:  # pragma: no cover - defensive
                         chunk_text = ""
             if chunk_text:
-                last_chunk_text = chunk_text
                 state.push(chunk_text, on_chunk)
 
-        final_text = state.aggregated_text or last_chunk_text
+        final_text = state.text
         if not final_text:
             logger.warning("Gemini nie zwrócił treści w odpowiedzi.")
             return "Błąd: Gemini nie zwrócił treści w odpowiedzi."
