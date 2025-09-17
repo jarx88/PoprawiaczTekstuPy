@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+import threading
 from typing import Any, Callable, Dict, Iterable, Iterator, Optional
 
 import httpx
@@ -221,6 +222,7 @@ def _stream_modern_sdk(
     contents: list[Dict[str, Any]],
     system_instruction: str,
     on_chunk: Optional[ChunkCallback],
+    cancel_event: Optional[threading.Event],
 ) -> tuple[str, Any]:
     if modern_genai is None:
         raise RuntimeError("google-genai SDK not available")
@@ -243,6 +245,8 @@ def _stream_modern_sdk(
 
     stream = client.models.generate_content_stream(**kwargs)
     for event in stream:
+        if cancel_event and cancel_event.is_set():
+            break
         last_event = event
         snapshot = _extract_text(event)
         state.emit_delta(snapshot, on_chunk)
@@ -258,6 +262,7 @@ def _stream_legacy_sdk(
     contents: list[Dict[str, Any]],
     system_instruction: str,
     on_chunk: Optional[ChunkCallback],
+    cancel_event: Optional[threading.Event],
 ) -> tuple[str, Any]:
     if legacy_genai is None:
         raise RuntimeError("google-generativeai SDK not available")
@@ -280,6 +285,8 @@ def _stream_legacy_sdk(
 
     last_event: Any = None
     for event in stream:
+        if cancel_event and cancel_event.is_set():
+            break
         last_event = event
         snapshot = _extract_text(event)
         state.emit_delta(snapshot, on_chunk)
@@ -303,6 +310,7 @@ def _stream_via_http(
     contents: list[Dict[str, Any]],
     system_instruction: str,
     on_chunk: Optional[ChunkCallback],
+    cancel_event: Optional[threading.Event],
 ) -> tuple[str, Dict[str, Any]]:
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:streamGenerateContent"
     headers = {
@@ -334,6 +342,8 @@ def _stream_via_http(
         response.raise_for_status()
 
         for line in response.iter_lines():
+            if cancel_event and cancel_event.is_set():
+                break
             if not line or line.startswith(":"):
                 continue
             if line.startswith("data:"):
@@ -358,7 +368,10 @@ def _call_legacy_sync(
     model: str,
     contents: list[Dict[str, Any]],
     system_instruction: str,
+    cancel_event: Optional[threading.Event],
 ) -> str:
+    if cancel_event and cancel_event.is_set():
+        return ""
     if legacy_genai is None:
         raise RuntimeError("google-generativeai SDK not available")
 
@@ -383,7 +396,10 @@ def _call_http_sync(
     model: str,
     contents: list[Dict[str, Any]],
     system_instruction: str,
+    cancel_event: Optional[threading.Event],
 ) -> str:
+    if cancel_event and cancel_event.is_set():
+        return ""
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
     headers = {
         "Content-Type": "application/json",
@@ -417,6 +433,7 @@ def correct_text_gemini(
     instruction_prompt: str,
     system_prompt: str,
     on_chunk: Optional[ChunkCallback] = None,
+    cancel_event: Optional[threading.Event] = None,
 ) -> str:
     """Correct text using Google Gemini with best-effort streaming."""
 
@@ -432,6 +449,9 @@ def correct_text_gemini(
     if not text_to_correct:
         logger.warning("Próba użycia Google Gemini API bez tekstu do poprawy.")
         return "Błąd: Brak tekstu do poprawy."
+
+    if cancel_event and cancel_event.is_set():
+        return "❌ Anulowano"
 
     logger.info(
         "Wysyłanie zapytania do Google Gemini API (model: %s). Tekst: %s...",
@@ -451,38 +471,63 @@ def correct_text_gemini(
 
     errors: list[str] = []
 
+    def _cancelled() -> bool:
+        return bool(cancel_event and cancel_event.is_set())
+
     try:
-        final_text, _ = _stream_modern_sdk(api_key, model, contents, system_instruction, on_chunk)
+        final_text, _ = _stream_modern_sdk(api_key, model, contents, system_instruction, on_chunk, cancel_event)
         if final_text:
+            if cancel_event and cancel_event.is_set():
+                return final_text or "❌ Anulowano"
             return final_text
     except Exception as modern_err:  # pragma: no cover - fallbacks are expected
         errors.append(f"modern SDK: {modern_err}")
 
+    if _cancelled():
+        return "❌ Anulowano"
+
     try:
-        final_text, _ = _stream_legacy_sdk(api_key, model, contents, system_instruction, on_chunk)
+        final_text, _ = _stream_legacy_sdk(api_key, model, contents, system_instruction, on_chunk, cancel_event)
         if final_text:
+            if cancel_event and cancel_event.is_set():
+                return final_text or "❌ Anulowano"
             return final_text
     except Exception as legacy_err:  # pragma: no cover
         errors.append(f"legacy SDK: {legacy_err}")
 
+    if _cancelled():
+        return "❌ Anulowano"
+
     try:
-        final_text, _ = _stream_via_http(api_key, model, contents, system_instruction, on_chunk)
+        final_text, _ = _stream_via_http(api_key, model, contents, system_instruction, on_chunk, cancel_event)
         if final_text:
+            if cancel_event and cancel_event.is_set():
+                return final_text or "❌ Anulowano"
             return final_text
     except Exception as http_stream_err:  # pragma: no cover
         errors.append(f"stream SSE: {http_stream_err}")
 
+    if _cancelled():
+        return "❌ Anulowano"
+
     try:
         if legacy_genai is not None:
-            final_text = _call_legacy_sync(api_key, model, contents, system_instruction)
+            final_text = _call_legacy_sync(api_key, model, contents, system_instruction, cancel_event)
             if final_text:
+                if cancel_event and cancel_event.is_set():
+                    return final_text or "❌ Anulowano"
                 return final_text
     except Exception as legacy_sync_err:  # pragma: no cover
         errors.append(f"legacy sync: {legacy_sync_err}")
 
+    if _cancelled():
+        return "❌ Anulowano"
+
     try:
-        final_text = _call_http_sync(api_key, model, contents, system_instruction)
+        final_text = _call_http_sync(api_key, model, contents, system_instruction, cancel_event)
         if final_text:
+            if cancel_event and cancel_event.is_set():
+                return final_text or "❌ Anulowano"
             return final_text
     except Exception as http_sync_err:  # pragma: no cover
         errors.append(f"http sync: {http_sync_err}")

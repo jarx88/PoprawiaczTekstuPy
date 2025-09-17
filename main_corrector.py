@@ -107,7 +107,7 @@ class AnimatedGIF(tk.Label):
             
             gif.close()  # Close to free memory
             self.frames_loaded = True
-            logging.info(f"🍾 Lazy loaded {len(self.frames)} GIF frames")
+            logging.debug(f"🍾 Lazy loaded {len(self.frames)} GIF frames")
                 
         except Exception as e:
             logging.error(f"Błąd lazy loading GIF {self.path}: {e}")
@@ -136,12 +136,7 @@ class AnimatedGIF(tk.Label):
 
     def cleanup(self):
         """Cleanup frames to free RAM."""
-        if self.frames:
-            logging.debug(f"Cleaning up {len(self.frames)} GIF frames")
-            self.frames.clear()
-            self.frames_loaded = False
-            # Reset to placeholder
-            self.configure(image=self.placeholder_photo)
+        self.stop()
     
     def animate(self):
         """Animate frames."""
@@ -193,6 +188,7 @@ class MultiAPICorrector(ctk.CTk):
         self.processing = False
         self.current_session_id = 0
         self.cancel_flags = {}  # Flagi anulowania dla każdego API
+        self.api_cancel_events = {}
         # Guardy anty-duplikacji
         self.result_update_guard = {}  # klucz: (session_id, idx) -> bool
         self.paste_in_progress = False
@@ -693,9 +689,17 @@ class MultiAPICorrector(ctk.CTk):
 
     def _prepare_processing_session(self, text, status_message):
         """Resetuje UI i ustawia wszystkie panele w stan ładowania."""
+        # Zatrzymaj ewentualne poprzednie strumienie
+        for event in self.api_cancel_events.values():
+            try:
+                event.set()
+            except Exception:
+                pass
+
         self.processing = True
         self.api_results = {}
         self.cancel_flags = {}
+        self.api_cancel_events = {}
         self.current_session_id += 1
         self._stream_started_indices.clear()
         self.original_text = text
@@ -706,6 +710,7 @@ class MultiAPICorrector(ctk.CTk):
         self.api_counter_label.configure(text="🤖 API: 0/4")
 
         for i, api_name in enumerate(self.api_names):
+            self.api_cancel_events[i] = threading.Event()
             text_widget = self.api_text_widgets[i]
             text_widget.configure(state="normal")
             text_widget.delete("1.0", "end")
@@ -863,12 +868,14 @@ class MultiAPICorrector(ctk.CTk):
         self._prepare_processing_session(text, status_message)
 
         if should_show:
+            self.attributes('-alpha', 0.0)
             self.update_idletasks()
             self.deiconify()
             self.lift()
             self.focus_force()
             self.attributes('-topmost', True)
-            self.after(100, lambda: self.attributes('-topmost', False))
+            self.after(50, lambda: self.attributes('-alpha', 1.0))
+            self.after(120, lambda: self.attributes('-topmost', False))
 
         def launch_threads():
             if status_message != "🔄 Wysyłanie do 4 API równocześnie...":
@@ -883,9 +890,13 @@ class MultiAPICorrector(ctk.CTk):
             start_time = time.time()
             logging.info(f"🔍 DEBUG: _process_single_api started for {api_name} (idx={idx})")
             
+            cancel_event = self.api_cancel_events.get(idx)
+
             # Sprawdzaj co 0.5s czy anulowano
             def check_cancelled():
-                return self.cancel_flags.get(idx, False)
+                if self.cancel_flags.get(idx, False):
+                    return True
+                return bool(cancel_event and cancel_event.is_set())
             
             # Symuluj możliwość anulowania
             # W prawdziwej implementacji musisz sprawdzać cancel_flag w api_func
@@ -937,14 +948,25 @@ class MultiAPICorrector(ctk.CTk):
                     # Jeżeli klient wspiera streaming (on_chunk), przekaż callback
                     callback = (lambda ch, i=idx, s=session_id: self._append_partial(i, ch, s))
                     try:
-                        api_thread_result[0] = api_func(
-                            self.api_keys[api_name],
-                            self.models.get(api_name, ""),
-                            text,
-                            instruction_prompt,
-                            system_prompt,
-                            on_chunk=callback
-                        )
+                        if api_name == "Gemini":
+                            api_thread_result[0] = api_func(
+                                self.api_keys[api_name],
+                                self.models.get(api_name, ""),
+                                text,
+                                instruction_prompt,
+                                system_prompt,
+                                on_chunk=callback,
+                                cancel_event=cancel_event,
+                            )
+                        else:
+                            api_thread_result[0] = api_func(
+                                self.api_keys[api_name],
+                                self.models.get(api_name, ""),
+                                text,
+                                instruction_prompt,
+                                system_prompt,
+                                on_chunk=callback
+                            )
                     except TypeError:
                         # Starsza sygnatura bez on_chunk
                         api_thread_result[0] = api_func(
@@ -954,13 +976,13 @@ class MultiAPICorrector(ctk.CTk):
                             instruction_prompt,
                             system_prompt
                         )
-                    
+
                     logging.info(f"🚨 CALL AFTER: {api_name} zwrócił: {type(api_thread_result[0])} - {str(api_thread_result[0])[:100]}...")
                     logging.info(f"🔍 DEBUG: {api_name} API call completed successfully")
                 except Exception as e:
                     logging.error(f"🔍 DEBUG: {api_name} API call failed: {e}")
                     api_thread_result[1] = e
-            
+
             api_thread = threading.Thread(target=run_api)
             api_thread.start()
             
@@ -969,7 +991,8 @@ class MultiAPICorrector(ctk.CTk):
             while api_thread.is_alive():
                 if check_cancelled():
                     logging.info(f"API {api_name} anulowane")
-                    # Nie możemy przerwać wątku, ale przestajemy czekać
+                    if cancel_event:
+                        cancel_event.set()
                     def update_cancel_gui(i=idx, s=session_id):
                         self._update_api_result(i, "❌ Anulowano", True, 0, s)
                     self.after(0, update_cancel_gui)
@@ -994,13 +1017,17 @@ class MultiAPICorrector(ctk.CTk):
             # Sprawdź wynik
             if api_thread_result[1]:
                 raise api_thread_result[1]
-            
+
             result = api_thread_result[0]
             elapsed = time.time() - start_time
-            
+
             # Sprawdź czy to nadal aktualna sesja
             if session_id != self.current_session_id:
                 logging.info(f"Ignoruję wynik z nieaktualnej sesji {session_id}")
+                return
+
+            if check_cancelled():
+                logging.info(f"API {api_name} zakończone po anulowaniu")
                 return
             
             # Aktualizuj GUI w głównym wątku
@@ -1104,6 +1131,9 @@ class MultiAPICorrector(ctk.CTk):
         if idx in self.api_threads and self.api_threads[idx].is_alive():
             self.cancel_flags[idx] = True
             logging.info(f"Anulowanie API {idx}")
+            event = self.api_cancel_events.get(idx)
+            if event:
+                event.set()
     
     
     def cancel_all_processing(self):
@@ -1113,6 +1143,9 @@ class MultiAPICorrector(ctk.CTk):
         # Ustaw flagi anulowania
         for idx in range(4):
             self.cancel_flags[idx] = True
+            event = self.api_cancel_events.get(idx)
+            if event:
+                event.set()
         
         # Czekaj chwilę na zakończenie
         time.sleep(0.1)
