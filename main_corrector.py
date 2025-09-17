@@ -184,6 +184,7 @@ class MultiAPICorrector(ctk.CTk):
         self.api_keys = {}
         self.models = {}
         self.settings = {}
+        self.ai_settings = {}
         self.api_threads = {}
         self.api_results = {}
         self.original_text = ""
@@ -589,7 +590,13 @@ class MultiAPICorrector(ctk.CTk):
     def load_config(self):
         """Ładuje konfigurację API."""
         try:
-            self.api_keys, self.models, self.settings, _ = config_manager.load_config()
+            (
+                self.api_keys,
+                self.models,
+                self.settings,
+                self.ai_settings,
+                _,
+            ) = config_manager.load_config()
             
             # Sprawdź które API są skonfigurowane
             configured = []
@@ -1660,23 +1667,21 @@ class SettingsWindow(ctk.CTkToplevel):
                 except:
                     self.model_inputs[api_key].insert(0, current_model)
         
-        # Load AI settings
-        try:
-            import configparser
-            from utils.config_manager import get_config_path, get_config_value
-            config = configparser.ConfigParser()
-            config.read(get_config_path())
-            
-            reasoning_effort = get_config_value(config, "AI_SETTINGS", "ReasoningEffort", "high")
-            verbosity = get_config_value(config, "AI_SETTINGS", "Verbosity", "medium")
-            
-            self.reasoning_combo.set(reasoning_effort)
-            self.verbosity_combo.set(verbosity)
-        except Exception as e:
-            logging.debug(f"Błąd ładowania ustawień AI: {e}")
-            # Set defaults
-            self.reasoning_combo.set("high")
-            self.verbosity_combo.set("medium")
+        ai_settings = getattr(self.parent, "ai_settings", {}) or {}
+        reasoning_effort = ai_settings.get("ReasoningEffort", "high") or "high"
+        verbosity = ai_settings.get("Verbosity", "medium") or "medium"
+
+        if reasoning_effort not in {"minimal", "low", "medium", "high"}:
+            logging.debug(
+                "Nieznana wartość ReasoningEffort w konfiguracji: %s", reasoning_effort
+            )
+            reasoning_effort = "high"
+        if verbosity not in {"low", "medium", "high"}:
+            logging.debug("Nieznana wartość Verbosity w konfiguracji: %s", verbosity)
+            verbosity = "medium"
+
+        self.reasoning_combo.set(reasoning_effort)
+        self.verbosity_combo.set(verbosity)
 
         highlight_enabled = str(self.parent.settings.get("HighlightDiffs", "0")).strip().lower() in {"1", "true", "yes", "on"}
         self.highlight_var.set(highlight_enabled)
@@ -1831,8 +1836,8 @@ class SettingsWindow(ctk.CTkToplevel):
                     self.parent.models[api_key] = get_default_model(api_key)
             
             ai_settings = {
-                "ReasoningEffort": self.reasoning_combo.get(),
-                "Verbosity": self.verbosity_combo.get()
+                "ReasoningEffort": (self.reasoning_combo.get() or "high").strip().lower(),
+                "Verbosity": (self.verbosity_combo.get() or "medium").strip().lower()
             }
 
             base_settings = dict(self.parent.settings)
@@ -1849,6 +1854,7 @@ class SettingsWindow(ctk.CTkToplevel):
             )
 
             self.parent.settings = settings_payload
+            self.parent.ai_settings = ai_settings
             self.parent.refresh_diff_highlights()
             self.parent.update_status("✅ Ustawienia zapisane")
             

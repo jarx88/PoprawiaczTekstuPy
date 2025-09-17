@@ -42,7 +42,7 @@ def main():
     
     try:
         # Load config
-        api_keys, models, settings, new_config = config_manager.load_config()
+        api_keys, models, settings, ai_settings, new_config = config_manager.load_config()
         
         if not api_keys or not any(api_keys.values()):
             print("ERROR: No API keys configured")

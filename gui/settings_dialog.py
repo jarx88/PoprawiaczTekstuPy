@@ -234,7 +234,7 @@ if __name__ == '__main__':
     # Załaduj przykładową lub pustą konfigurację do testów
     # W rzeczywistej aplikacji te dane przyszłyby z MainWindow
     try:
-        keys, models_conf, settings_conf, _ = config_manager.load_config()
+        keys, models_conf, settings_conf, ai_settings, _ = config_manager.load_config()
     except Exception as e:
         print(f"Błąd ładowania configu: {e}, używam domyślnych.")
         keys = {"OpenAI": "", "Anthropic": "", "Gemini": "", "DeepSeek": ""}

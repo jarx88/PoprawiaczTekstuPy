@@ -179,7 +179,14 @@ class MainWindow(QMainWindow):
         # Używamy teraz paths.py
         self.project_dir = get_app_dir() # Use the path from paths.py
 
-        self.api_keys, self.current_models, self.settings, _ = config_manager.load_config()
+        self.ai_settings = {}
+        (
+            self.api_keys,
+            self.current_models,
+            self.settings,
+            self.ai_settings,
+            _,
+        ) = config_manager.load_config()
         self.s_original_text = ""
         self.s_current_style = "normal"
         self.api_clients_enum = {"OPENAI": 0, "ANTHROPIC": 1, "GEMINI": 2, "DEEPSEEK": 3} # Zgodnie z AutoIt Enum
@@ -700,7 +707,13 @@ class MainWindow(QMainWindow):
     def _update_gui_after_settings_change(self):
         """Aktualizuje GUI, np. tytuły paneli, po zmianie ustawień."""
         # Odświeżenie konfiguracji, którą przechowuje MainWindow
-        self.api_keys, self.current_models, self.settings, _ = config_manager.load_config()
+        (
+            self.api_keys,
+            self.current_models,
+            self.settings,
+            self.ai_settings,
+            _,
+        ) = config_manager.load_config()
 
         # Aktualizacja tytułów paneli API
         # Zakładamy, że self.api_grid_layout i groupboxy w nim istnieją
@@ -731,7 +744,13 @@ class MainWindow(QMainWindow):
         # Załaduj bieżącą konfigurację przed otwarciem dialogu
         # To zapewnia, że dialog zawsze startuje z najświeższymi danymi z pliku
         try:
-            current_keys, current_models_conf, current_settings, _ = config_manager.load_config()
+            (
+                current_keys,
+                current_models_conf,
+                current_settings,
+                current_ai_settings,
+                _,
+            ) = config_manager.load_config()
         except Exception as e:
             logger.error(f"Błąd ładowania konfiguracji przed otwarciem ustawień: {e}", exc_info=True)
             msg = QMessageBox(self)
@@ -930,7 +949,13 @@ class MainWindow(QMainWindow):
         # Ładujemy najnowsze klucze i modele przed każdym zapytaniem
         # aby uwzględnić zmiany dokonane w oknie ustawień bez restartu aplikacji
         try:
-            self.api_keys, self.current_models, self.settings, _ = config_manager.load_config()
+            (
+                self.api_keys,
+                self.current_models,
+                self.settings,
+                self.ai_settings,
+                _,
+            ) = config_manager.load_config()
             logger.debug("Przeładowano konfigurację API przed rozpoczęciem zapytań.")
         except Exception as e:
             error_message = f"Błąd podczas przeładowania konfiguracji API: {e}"

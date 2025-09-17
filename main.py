@@ -109,7 +109,7 @@ def check_first_run():
         log_debug_info()
         
         # Ładuje konfigurację
-        api_keys, models, settings, new_config = config_manager.load_config()
+        api_keys, models, settings, ai_settings, new_config = config_manager.load_config()
         logging.info("Wczytano konfigurację kluczy API")
         logging.info(f"Wczytane modele: {models}")
         logging.info(f"Czy nowa konfiguracja: {new_config}")
