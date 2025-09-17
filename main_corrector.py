@@ -116,19 +116,24 @@ class AnimatedGIF(tk.Label):
             fallback_image = Image.new('RGB', (gif_size, gif_size), color='blue')
             self.frames = [ImageTk.PhotoImage(fallback_image)]
             self.frames_loaded = True
-        
+
     def start(self):
         """Start animation - z lazy loading."""
         if not self.frames_loaded:
             self._load_frames_lazy()
-        
+
         self.is_running = True
         self.animate()
-    
+
     def stop(self):
         """Stop animation."""
         self.is_running = False
-    
+
+    def preload(self):
+        """Wczytuje klatki bez rozpoczynania animacji."""
+        if not self.frames_loaded:
+            self._load_frames_lazy()
+
     def cleanup(self):
         """Cleanup frames to free RAM."""
         if self.frames:
@@ -450,7 +455,7 @@ class MultiAPICorrector(ctk.CTk):
             
             # Loader frame (dla animacji GIF) - przezroczysty, ZAWSZE obecny, bez ramek
             loader_frame = ctk.CTkFrame(content_frame, fg_color="transparent", border_width=0)
-            loader_frame.place(relx=0, rely=0, relwidth=1, relheight=1)  # Wypełnia całe content_frame
+            loader_frame.place(relx=0, rely=0, relwidth=1, relheight=1)
             self.api_loader_frames.append(loader_frame)
             
             # Animated GIF loader (skalowany)
@@ -485,14 +490,13 @@ class MultiAPICorrector(ctk.CTk):
                 fg_color="white",
                 text_color="black"
             )
-            text_widget.place(relx=0, rely=0, relwidth=1, relheight=1, in_=content_frame)  # Wypełnia całe content_frame
+            text_widget.place(relx=0, rely=0, relwidth=1, relheight=1, in_=content_frame)
             text_widget.insert("1.0", f"Oczekiwanie na tekst...")
             text_widget.configure(state="disabled")
             self.api_text_widgets.append(text_widget)
-            
-            # Na początek pokaż text widget (ukryj loader)
-            loader_frame.place_forget()
-            text_widget.place(relx=0, rely=0, relwidth=1, relheight=1, in_=content_frame)
+
+            # Na początek pokaż text widget ponad loaderem
+            text_widget.lift()
             
             # Button "Użyj tego tekstu" z kolorem API
             use_button = ctk.CTkButton(
@@ -557,6 +561,8 @@ class MultiAPICorrector(ctk.CTk):
             height=40
         )
         self.minimize_button.pack(side="left", padx=5)
+
+        self._preload_loader_gifs()
     
     def darken_color(self, hex_color):
         """Przyciemnia kolor hex o 20%."""
@@ -571,6 +577,15 @@ class MultiAPICorrector(ctk.CTk):
         
         # Konwertuj z powrotem na hex
         return f"#{r:02x}{g:02x}{b:02x}"
+
+    def _preload_loader_gifs(self):
+        """Preloads loader GIFs while okno jest jeszcze ukryte."""
+        for loader in self.api_loaders:
+            if hasattr(loader, 'preload'):
+                try:
+                    loader.preload()
+                except Exception as exc:
+                    logging.debug(f"Preload loader GIF failed: {exc}")
     
     def load_config(self):
         """Ładuje konfigurację API."""
@@ -696,10 +711,9 @@ class MultiAPICorrector(ctk.CTk):
             text_widget.delete("1.0", "end")
             text_widget.insert("1.0", "🔄 Przygotowanie...")
             text_widget.configure(state="disabled")
-            text_widget.place_forget()
 
             loader_frame = self.api_loader_frames[i]
-            loader_frame.place(relx=0, rely=0, relwidth=1, relheight=1)
+            loader_frame.lift()
 
             loader = self.api_loaders[i]
             if hasattr(loader, 'start'):
@@ -730,8 +744,7 @@ class MultiAPICorrector(ctk.CTk):
             if idx not in self._stream_started_indices:
                 # Ukryj loader i pokaż textbox
                 try:
-                    self.api_loader_frames[idx].place_forget()
-                    self.api_text_widgets[idx].place(relx=0, rely=0, relwidth=1, relheight=1)
+                    self.api_text_widgets[idx].lift()
                 except Exception:
                     pass
                 # Wyczyść placeholder
@@ -1021,9 +1034,11 @@ class MultiAPICorrector(ctk.CTk):
             if hasattr(self.api_loaders[idx], 'stop'):
                 self.api_loaders[idx].stop()
             
-            # Hide loader, show text (użyj place zamiast pack)
-            self.api_loader_frames[idx].place_forget()
-            self.api_text_widgets[idx].place(relx=0, rely=0, relwidth=1, relheight=1)
+            # Przestaw kolejność widoków bez zmiany położenia
+            try:
+                self.api_text_widgets[idx].lift()
+            except Exception:
+                pass
             
             # Zakończ progress bar na 100% (lub 0% przy błędzie)
             self.api_progress_bars[idx].set(1.0 if not is_error else 0)
@@ -1108,9 +1123,11 @@ class MultiAPICorrector(ctk.CTk):
             if hasattr(self.api_loaders[i], 'stop'):
                 self.api_loaders[i].stop()
             
-            # Hide loaders, show text (użyj place zamiast pack)
-            self.api_loader_frames[i].place_forget()
-            self.api_text_widgets[i].place(relx=0, rely=0, relwidth=1, relheight=1)
+            # Przywróć widok tekstu ponad loaderem
+            try:
+                self.api_text_widgets[i].lift()
+            except Exception:
+                pass
             
             # Update text
             self.api_text_widgets[i].configure(state="normal")
