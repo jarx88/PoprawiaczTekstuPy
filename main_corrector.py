@@ -8,6 +8,8 @@ import sys
 import os
 import logging
 from datetime import datetime
+import difflib
+import re
 import customtkinter as ctk
 import pystray
 from PIL import Image, ImageTk
@@ -194,6 +196,7 @@ class MultiAPICorrector(ctk.CTk):
         self.paste_in_progress = False
         self._stream_started_indices = set()
         self.api_names = ["OpenAI", "Anthropic", "Gemini", "DeepSeek"]
+        self._diff_word_pattern = re.compile(r"\S+")
         
         # UI - zbuduj cały interfejs
         self.setup_ui()
@@ -603,7 +606,9 @@ class MultiAPICorrector(ctk.CTk):
                         logging.info(f"🔍 DEBUG: {provider} -> {model}")
             else:
                 self.update_status("⚠️ Brak API - skonfiguruj w ustawieniach")
-                
+
+            self.refresh_diff_highlights()
+
         except Exception as e:
             logging.error(f"Błąd ładowania konfiguracji: {e}")
             self.update_status("❌ Błąd konfiguracji")
@@ -716,6 +721,7 @@ class MultiAPICorrector(ctk.CTk):
             text_widget.delete("1.0", "end")
             text_widget.insert("1.0", "🔄 Przygotowanie...")
             text_widget.configure(state="disabled")
+            text_widget.tag_remove("diff_highlight", "1.0", "end")
 
             loader_frame = self.api_loader_frames[i]
             loader_frame.lift()
@@ -772,7 +778,58 @@ class MultiAPICorrector(ctk.CTk):
         
         # ASYNCHRONICZNY UPDATE - nie blokuje wątku API
         self.after(0, do_append)
-    
+
+    def _is_diff_highlighting_enabled(self) -> bool:
+        value = str(self.settings.get("HighlightDiffs", "0")).strip().lower()
+        return value in {"1", "true", "yes", "on"}
+
+    def _highlight_diff(self, idx: int, original: str, corrected: str) -> None:
+        widget = self.api_text_widgets[idx]
+        prev_state = widget.cget("state")
+        if prev_state != "normal":
+            widget.configure(state="normal")
+        try:
+            widget.tag_remove("diff_highlight", "1.0", "end")
+            if not self._is_diff_highlighting_enabled():
+                return
+            if not original.strip() or not corrected.strip():
+                return
+
+            orig_tokens = [m.group() for m in self._diff_word_pattern.finditer(original)]
+            corr_matches = list(self._diff_word_pattern.finditer(corrected))
+            if not corr_matches:
+                return
+            corr_tokens = [m.group() for m in corr_matches]
+            matcher = difflib.SequenceMatcher(None, orig_tokens, corr_tokens)
+            widget.tag_config("diff_highlight", underline=True, foreground="#d93025")
+            for tag, _i1, _i2, j1, j2 in matcher.get_opcodes():
+                if tag not in ("replace", "insert"):
+                    continue
+                if j1 >= len(corr_matches) or j1 == j2:
+                    continue
+                end_index = min(j2 - 1, len(corr_matches) - 1)
+                start = corr_matches[j1].start()
+                end = corr_matches[end_index].end()
+                widget.tag_add("diff_highlight", f"1.0+{start}c", f"1.0+{end}c")
+        finally:
+            if prev_state != "normal":
+                widget.configure(state=prev_state)
+
+    def refresh_diff_highlights(self):
+        if not hasattr(self, "api_text_widgets"):
+            return
+        for idx, widget in enumerate(self.api_text_widgets):
+            prev_state = widget.cget("state")
+            widget.configure(state="normal")
+            text = widget.get("1.0", "end-1c")
+            widget.tag_remove("diff_highlight", "1.0", "end")
+            if self._is_diff_highlighting_enabled() and text.strip() and not text.startswith("❌") and not text.startswith("🔄"):
+                try:
+                    self._highlight_diff(idx, self.original_text or "", text)
+                except Exception:
+                    logging.debug("Highlight diff failed", exc_info=True)
+            widget.configure(state=prev_state)
+
     def _start_api_threads(self, text):
         """Uruchamia API threads - UI już przygotowane!"""
         logging.info("🚀 Starting API threads with pre-rendered UI")
@@ -1074,6 +1131,13 @@ class MultiAPICorrector(ctk.CTk):
             self.api_text_widgets[idx].configure(state="normal")
             self.api_text_widgets[idx].delete("1.0", "end")
             self.api_text_widgets[idx].insert("1.0", result)
+            if is_error:
+                self.api_text_widgets[idx].tag_remove("diff_highlight", "1.0", "end")
+            else:
+                try:
+                    self._highlight_diff(idx, self.original_text or "", result)
+                except Exception:
+                    logging.debug("Highlight diff failed", exc_info=True)
             self.api_text_widgets[idx].configure(state="disabled")
             
             # Disable cancel button
@@ -1167,6 +1231,7 @@ class MultiAPICorrector(ctk.CTk):
             self.api_text_widgets[i].delete("1.0", "end")
             self.api_text_widgets[i].insert("1.0", "❌ Anulowano")
             self.api_text_widgets[i].configure(state="disabled")
+            self.api_text_widgets[i].tag_remove("diff_highlight", "1.0", "end")
             
             # Zatrzymaj i ukryj progress bar
             self.api_progress_bars[i].set(0)  # Reset na 0% przy anulowaniu
@@ -1308,6 +1373,7 @@ class SettingsWindow(ctk.CTkToplevel):
     def __init__(self, parent):
         super().__init__(parent)
         self.parent = parent
+        self.api_names = parent.api_names
         
         # Ustaw ikonę okna Settings
         try:
@@ -1358,7 +1424,8 @@ class SettingsWindow(ctk.CTkToplevel):
         self.model_combos = {}
         self.model_inputs = {}
         self.refresh_buttons = {}
-        
+        self.highlight_var = ctk.BooleanVar(value=False)
+
         apis = [
             ("OpenAI", "OpenAI API Key", "sk-...", "#10a37f"),
             ("Anthropic", "Anthropic API Key", "sk-ant-...", "#d97706"),
@@ -1444,7 +1511,26 @@ class SettingsWindow(ctk.CTkToplevel):
             )
             model_input.pack(fill="x", pady=(5, 0))
             self.model_inputs[api_key] = model_input
-        
+
+        general_frame = ctk.CTkFrame(main_frame, fg_color="#1f2937", corner_radius=10)
+        general_frame.pack(fill="x", pady=(10, 10))
+
+        ctk.CTkLabel(
+            general_frame,
+            text="Widok wyników",
+            font=ctk.CTkFont(size=max(12, int(14 * self.parent.scale_factor)), weight="bold"),
+            text_color="white"
+        ).pack(anchor="w", padx=15, pady=(12, 6))
+
+        self.highlight_checkbox = ctk.CTkCheckBox(
+            general_frame,
+            text="Podkreślaj zmiany względem oryginału (czerwone podkreślenie)",
+            variable=self.highlight_var,
+            onvalue=True,
+            offvalue=False
+        )
+        self.highlight_checkbox.pack(anchor="w", padx=15, pady=(0, 12))
+
         # AI Settings section for GPT-5 models
         ai_settings_frame = ctk.CTkFrame(main_frame, fg_color="#6366f1", corner_radius=10)
         ai_settings_frame.pack(fill="x", pady=(20, 10))
@@ -1590,7 +1676,10 @@ class SettingsWindow(ctk.CTkToplevel):
             # Set defaults
             self.reasoning_combo.set("high")
             self.verbosity_combo.set("medium")
-        
+
+        highlight_enabled = str(self.parent.settings.get("HighlightDiffs", "0")).strip().lower() in {"1", "true", "yes", "on"}
+        self.highlight_var.set(highlight_enabled)
+
         # Load models asynchronously
         self.after(100, self.load_all_models_async)
     
@@ -1745,6 +1834,8 @@ class SettingsWindow(ctk.CTkToplevel):
                 "ReasoningEffort": self.reasoning_combo.get(),
                 "Verbosity": self.verbosity_combo.get()
             }
+
+            self.parent.settings['HighlightDiffs'] = '1' if self.highlight_var.get() else '0'
             
             # Save to file
             config_manager.save_config(
@@ -1756,6 +1847,7 @@ class SettingsWindow(ctk.CTkToplevel):
             
             # Reload config in parent
             self.parent.load_config()
+            self.parent.refresh_diff_highlights()
             
             # Show success message
             messagebox.showinfo("Sukces", "Ustawienia zostały zapisane", parent=self)

@@ -50,7 +50,8 @@ DEFAULT_CONFIG = {
     },
     "SETTINGS": {
         "AutoStartup": "0",
-        "DefaultStyle": "normal"
+        "DefaultStyle": "normal",
+        "HighlightDiffs": "0"
     },
     "AI_SETTINGS": {
         "ReasoningEffort": "high",  # minimal, low, medium, high - dla modeli GPT-5
@@ -133,7 +134,8 @@ def load_config():
     # Pobierz ustawienia
     settings = {
         "AutoStartup": get_config_value(config, 'SETTINGS', 'AutoStartup', '0'),
-        "DefaultStyle": get_config_value(config, 'SETTINGS', 'DefaultStyle', 'normal')
+        "DefaultStyle": get_config_value(config, 'SETTINGS', 'DefaultStyle', 'normal'),
+        "HighlightDiffs": get_config_value(config, 'SETTINGS', 'HighlightDiffs', '0')
     }
 
     # Logowanie wczytanych kluczy i modeli (opcjonalnie, może być zbyt szczegółowe dla INFO)
