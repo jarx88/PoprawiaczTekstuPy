@@ -151,8 +151,8 @@ def correct_text_gemini(
             contents=[
                 types.UserContent(
                     parts=[
-                        types.Part.from_text(instruction_prompt),
-                        types.Part.from_text(text_to_correct),
+                        types.Part.from_text(text=instruction_prompt),
+                        types.Part.from_text(text=text_to_correct),
                     ]
                 )
             ],
