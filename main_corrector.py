@@ -840,6 +840,11 @@ class MultiAPICorrector(ctk.CTk):
         should_show = force_show or not window_visible
         status_message = "📝 Przetwarzanie tekstu..." if should_show else "🔄 Wysyłanie do 4 API równocześnie..."
 
+        if should_show and window_visible:
+            # Ukryj okno na czas przebudowy UI, żeby zapobiec migotaniu loaderów
+            self.withdraw()
+            self.update_idletasks()
+
         self._prepare_processing_session(text, status_message)
 
         if should_show:

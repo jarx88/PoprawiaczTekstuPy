@@ -148,27 +148,31 @@ def correct_text_gemini(api_key, model, text_to_correct, instruction_prompt, sys
         if callable(on_chunk) and hasattr(gemini_model, 'generate_content'):
             try:
                 collected = []
-                with gemini_model.generate_content(
+                stream = gemini_model.generate_content(
                     contents,
                     stream=True,
                     request_options=request_options,
-                ) as stream:
-                    for event in stream:
-                        try:
-                            text_chunk = extract_text(event) or getattr(event, 'text', '')
-                        except Exception:
-                            text_chunk = ''
-                        if not text_chunk:
-                            continue
-                        collected.append(text_chunk)
-                        try:
-                            on_chunk(text_chunk)
-                        except Exception:
-                            pass
+                )
+
+                for event in stream:
                     try:
-                        response = stream.get_final_response()
+                        text_chunk = extract_text(event) or getattr(event, 'text', '')
                     except Exception:
-                        response = None
+                        text_chunk = ''
+                    if not text_chunk:
+                        continue
+                    collected.append(text_chunk)
+                    try:
+                        on_chunk(text_chunk)
+                    except Exception:
+                        pass
+
+                response = stream
+                if hasattr(stream, 'resolve'):
+                    try:
+                        response = stream.resolve()
+                    except Exception:
+                        response = stream
                 if response is None and collected:
                     class _StreamResponse:
                         def __init__(self, text):
