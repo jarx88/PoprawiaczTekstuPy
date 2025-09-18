@@ -22,9 +22,35 @@ class SettingsDialog(QDialog):
     def __init__(self, current_api_keys, current_models, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Ustawienia API i Modeli")
-        self.setMinimumSize(600, 400) # Rozsądny minimalny rozmiar
-        self.setMaximumSize(900, 700) # Maksymalny rozmiar dla wygody
-        self.resize(650, 500) # Domyślny rozmiar startowy
+
+        # Dynamiczne dostosowanie rozmiaru na podstawie DPI
+        screen = self.screen() if hasattr(self, 'screen') else parent.screen() if parent else None
+        if screen:
+            dpi_scale = screen.devicePixelRatio()
+            logical_dpi = screen.logicalDotsPerInch()
+
+            # Dla ekranów wysokiej rozdzielczości użyj mniejszych rozmiarów
+            if logical_dpi > 120 or dpi_scale > 1.5:  # HiDPI
+                min_w, min_h = 450, 320
+                max_w, max_h = 700, 550
+                def_w, def_h = 500, 400
+            elif logical_dpi > 96 or dpi_scale > 1.25:  # Średnie DPI
+                min_w, min_h = 480, 330
+                max_w, max_h = 750, 580
+                def_w, def_h = 520, 420
+            else:  # Standardowe DPI
+                min_w, min_h = 500, 350
+                max_w, max_h = 800, 600
+                def_w, def_h = 550, 450
+        else:
+            # Fallback dla przypadku gdy nie można wykryć ekranu
+            min_w, min_h = 500, 350
+            max_w, max_h = 800, 600
+            def_w, def_h = 550, 450
+
+        self.setMinimumSize(min_w, min_h)
+        self.setMaximumSize(max_w, max_h)
+        self.resize(def_w, def_h)
         self.setModal(True)
 
         self.api_keys = dict(current_api_keys) # Kopia, aby można było anulować

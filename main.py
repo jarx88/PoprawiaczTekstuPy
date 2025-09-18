@@ -1,10 +1,9 @@
 import sys
 import os
-# Dodaj to na samym początku, zanim zaimportujesz cokolwiek z PyQt6
-os.environ['QT_DPI_AWARENESS'] = 'system'
-# Możesz też spróbować 'permonitor' lub 'system' jeśli 'permonitorv2' nie zadziała
-# os.environ['QT_DPI_AWARENESS'] = 'permonitor'
-# os.environ['QT_DPI_AWARENESS'] = 'system'
+# Ustawienia DPI dla lepszego skalowania wielomonitorowego
+os.environ['QT_DPI_AWARENESS'] = 'permonitorv2'  # Najlepsze dla wielomonitorowych konfiguracji
+os.environ['QT_AUTO_SCREEN_SCALE_FACTOR'] = '1'  # Automatyczne skalowanie
+os.environ['QT_SCALE_FACTOR_ROUNDING_POLICY'] = 'PassThrough'  # Płynne skalowanie
 
 import logging
 from datetime import datetime

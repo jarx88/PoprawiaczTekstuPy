@@ -238,8 +238,8 @@ class MainWindow(QMainWindow):
         else:
             print(f"Nie znaleziono ikony: {icon_path}")
         
-        # Ustawienie rozsądnego domyślnego rozmiaru okna
-        self.setGeometry(100, 100, 1000, 700) # Zmniejszony rozmiar dla lepszej proporcji
+        # Ustawienie rozsądnego domyślnego rozmiaru okna - zmniejszone dla HiDPI
+        self.setGeometry(100, 100, 900, 600) # Dalej zmniejszony rozmiar dla lepszej proporcji na HiDPI
         self.setWindowTitle("Poprawiacz Tekstu Multi-API (PyQt)")
 
         self.setStyleSheet("""
@@ -373,10 +373,10 @@ class MainWindow(QMainWindow):
 
         self.adjust_window_size()  # Automatyczne dopasowanie rozmiaru na starcie
         # Podłącz automatyczne skalowanie do sygnałów ekranu
-        screen = self.screen()
-        if screen:
-            screen.geometryChanged.connect(self.adjust_window_size)
-            screen.logicalDotsPerInchChanged.connect(self.adjust_window_size)
+        self._connect_screen_signals()
+
+        # Śledzenie bieżącego ekranu dla wielomonitorowego skalowania
+        self.current_screen = self.screen()
 
     def _create_enhanced_status_bar(self):
         """Tworzy usprawniony pasek statusu z dodatkowymi elementami."""
@@ -1678,8 +1678,33 @@ class MainWindow(QMainWindow):
         if screen:
             # logger.debug(f"Ekran: {screen.name()}, Dostępna geometria: {screen.availableGeometry()}") # Opcjonalne logowanie
             available = screen.availableGeometry()
-            width = int(available.width() * 0.7)  # Zwiększono z 0.6 na 0.7
-            height = int(available.height() * 0.75) # Zmniejszono z 0.85 na 0.75
+
+            # Wykryj skalowanie DPI dla lepszego dopasowania rozmiarów
+            dpi_scale = screen.devicePixelRatio()
+            logical_dpi = screen.logicalDotsPerInch()
+
+            # Dla ekranów wysokiej rozdzielczości użyj mniejszych proporcji
+            if logical_dpi > 120 or dpi_scale > 1.5:  # Ekrany wysokiej rozdzielczości
+                width_ratio = 0.5   # 50% szerokości dla HiDPI
+                height_ratio = 0.6  # 60% wysokości dla HiDPI
+            elif logical_dpi > 96 or dpi_scale > 1.25:  # Średnie skalowanie
+                width_ratio = 0.6   # 60% szerokości
+                height_ratio = 0.65 # 65% wysokości
+            else:  # Standardowe DPI
+                width_ratio = 0.7   # 70% szerokości
+                height_ratio = 0.75 # 75% wysokości
+
+            width = int(available.width() * width_ratio)
+            height = int(available.height() * height_ratio)
+
+            # Minimalne i maksymalne rozmiary dla bezpieczeństwa
+            min_width, min_height = 800, 500
+            max_width = int(available.width() * 0.9)
+            max_height = int(available.height() * 0.9)
+
+            width = max(min_width, min(width, max_width))
+            height = max(min_height, min(height, max_height))
+
             # Użyj singleShot, aby dać GUI chwilę na przetworzenie
             QTimer.singleShot(50, lambda: self._apply_adjusted_size(width, height, available)) # Zwiększono opóźnienie do 50ms
 
@@ -1690,6 +1715,38 @@ class MainWindow(QMainWindow):
              available_geometry.left() + (available_geometry.width() - width) // 2,
              available_geometry.top() + (available_geometry.height() - height) // 2
          )
+
+    def _connect_screen_signals(self):
+        """Podłącz sygnały dla bieżącego ekranu."""
+        screen = self.screen()
+        if screen:
+            screen.geometryChanged.connect(self.adjust_window_size)
+            screen.logicalDotsPerInchChanged.connect(self.adjust_window_size)
+
+    def _on_screen_changed(self):
+        """Obsługuje zmianę ekranu podczas przenoszenia okna."""
+        new_screen = self.screen()
+        if new_screen and new_screen != self.current_screen:
+            # Odłącz stare sygnały, jeśli poprzedni ekran jeszcze istnieje
+            if self.current_screen:
+                try:
+                    self.current_screen.geometryChanged.disconnect(self.adjust_window_size)
+                    self.current_screen.logicalDotsPerInchChanged.disconnect(self.adjust_window_size)
+                except:
+                    pass  # Ignoruj błędy odłączania
+
+            # Podłącz nowe sygnały
+            self.current_screen = new_screen
+            self._connect_screen_signals()
+
+            # Automatycznie dostosuj rozmiar do nowego ekranu po krótkim opóźnieniu
+            QTimer.singleShot(200, self.adjust_window_size)
+
+    def moveEvent(self, event):
+        """Obsługuje zdarzenie przeniesienia okna - wykrywa zmiany ekranu."""
+        super().moveEvent(event)
+        # Sprawdź czy okno zostało przeniesione na inny ekran
+        QTimer.singleShot(100, self._on_screen_changed)
 
     def _restart_application(self):
         """Restart całej aplikacji."""
