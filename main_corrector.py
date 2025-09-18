@@ -829,6 +829,7 @@ class MultiAPICorrector(ctk.CTk):
         self.api_labels = []
         self.api_buttons = []
         self.api_cancel_buttons = []
+        self.api_action_buttons = []  # Lista przycisków akcji
         self.api_progress_bars = []
         self.api_loaders = []
         self.api_loader_frames = []
@@ -873,7 +874,23 @@ class MultiAPICorrector(ctk.CTk):
             )
             api_label.pack(side="left")
             self.api_labels.append(api_label)
-            
+
+            # Action button (dropdown menu)
+            action_button = ctk.CTkOptionMenu(
+                header_content,
+                values=["⚙️ Akcje", "✨ Profesjonalizuj", "🇺🇸 Na angielski", "🇵🇱 Na polski"],
+                width=120,
+                height=25,
+                fg_color="#ffffff20",
+                button_color="#ffffff30",
+                button_hover_color="#ffffff40",
+                text_color="white",
+                command=lambda value, idx=i: self.handle_action_menu(idx, value)
+            )
+            action_button.pack(side="right", padx=5)
+            action_button.set("⚙️ Akcje")  # Default value
+            self.api_action_buttons.append(action_button)
+
             # Cancel button for single API
             cancel_btn = ctk.CTkButton(
                 header_content,
@@ -1205,6 +1222,7 @@ class MultiAPICorrector(ctk.CTk):
 
             self.api_cancel_buttons[i].configure(state="normal")
             self.api_buttons[i].configure(state="disabled")
+            self.api_action_buttons[i].configure(state="disabled")
             self.api_labels[i].configure(text=f"🤖 {api_name}")
 
         self.cancel_all_button.configure(state="normal")
@@ -1635,6 +1653,7 @@ class MultiAPICorrector(ctk.CTk):
         if not is_error:
             self.api_results[idx] = result
             self.api_buttons[idx].configure(state="normal")
+            self.api_action_buttons[idx].configure(state="normal")
             
             # Update label with time
             if elapsed_time > 0:
@@ -1720,6 +1739,7 @@ class MultiAPICorrector(ctk.CTk):
             # Disable buttons
             self.api_cancel_buttons[i].configure(state="disabled")
             self.api_buttons[i].configure(state="disabled")
+            self.api_action_buttons[i].configure(state="disabled")
             
             # Reset labels
             api_name = self.api_names[i]
@@ -1730,7 +1750,189 @@ class MultiAPICorrector(ctk.CTk):
         self.update_status("❌ Anulowano przetwarzanie")
         self.progress_label.configure(text="")
         self.api_counter_label.configure(text="🤖 API: 0/4")
-    
+
+    def handle_action_menu(self, api_index, selected_value):
+        """Obsługuje wybór akcji z menu dropdown dla danego panelu API"""
+        try:
+            # Walidacja indeksu
+            if not (0 <= api_index < len(self.api_action_buttons)):
+                self.log_message(f"Nieprawidłowy indeks API: {api_index}")
+                return
+
+            # Reset menu do domyślnej wartości
+            self.api_action_buttons[api_index].set("⚙️ Akcje")
+
+            # Sprawdź czy to pierwsza opcja (która jest tylko etykietą)
+            if selected_value == "⚙️ Akcje":
+                return
+
+            # Sprawdź czy mamy wynik w tym panelu
+            if api_index not in self.api_results:
+                self.log_message(f"Brak wyniku w panelu {self.api_names[api_index]} do przetworzenia")
+                return
+
+            current_text = self.api_results[api_index].strip()
+            if not current_text:
+                self.log_message(f"Brak tekstu w panelu {self.api_names[api_index]} do przetworzenia")
+                return
+
+            # Określ typ akcji na podstawie wyboru
+            if selected_value == "✨ Profesjonalizuj":
+                action_type = "professionalize"
+                system_prompt = "Zmień ton tego tekstu na profesjonalny, zachowując jego znaczenie i strukturę."
+                action_name = "profesjonalizacji"
+            elif selected_value == "🇺🇸 Na angielski":
+                action_type = "translate_to_en"
+                system_prompt = "Przetłumacz ten tekst na język angielski, zachowując jego znaczenie i ton."
+                action_name = "tłumaczenia na angielski"
+            elif selected_value == "🇵🇱 Na polski":
+                action_type = "translate_to_pl"
+                system_prompt = "Przetłumacz ten tekst na język polski, zachowując jego znaczenie i ton."
+                action_name = "tłumaczenia na polski"
+            else:
+                return
+
+            # Uruchom ponowne przetwarzanie dla danego panelu
+            self.reprocess_single_panel(api_index, current_text, system_prompt, action_name)
+
+        except Exception as e:
+            error_context = f"api_index={api_index}, selected_value='{selected_value}'"
+            self.log_message(f"Błąd podczas obsługi akcji menu ({error_context}): {e}")
+            print(f"ERROR: handle_action_menu ({error_context}): {e}")
+
+    def reprocess_single_panel(self, api_index, text, system_prompt, action_name):
+        """Ponownie przetwarza tekst dla konkretnego panelu z niestandardowym promptem"""
+        try:
+            api_name = self.api_names[api_index]
+
+            # Wyczyść poprzedni wynik
+            if api_index in self.api_results:
+                del self.api_results[api_index]
+
+            # Wyłącz przyciski dla tego panelu
+            self.api_buttons[api_index].configure(state="disabled")
+            self.api_action_buttons[api_index].configure(state="disabled")
+            self.api_cancel_buttons[api_index].configure(state="normal")
+
+            # Pokaż loader
+            self.api_loader_frames[api_index].lift()
+            if hasattr(self.api_loaders[api_index], 'start'):
+                self.api_loaders[api_index].start()
+
+            # Aktualizuj status
+            self.api_text_widgets[api_index].configure(state="normal")
+            self.api_text_widgets[api_index].delete("1.0", "end")
+            self.api_text_widgets[api_index].insert("1.0", f"Przetwarzanie {action_name}...")
+            self.api_text_widgets[api_index].configure(state="disabled")
+
+            self.log_message(f"Rozpoczęto {action_name} dla {api_name}")
+
+            # Uruchom żądanie API w osobnym wątku
+            def run_api_request():
+                try:
+                    # Sprawdź który API i uruchom odpowiednią funkcję
+                    result = None
+                    if api_name == "OpenAI":
+                        result = openai_client.correct_text_openai(
+                            self.api_keys.get("OpenAI", ""),
+                            self.current_models.get("OpenAI", "gpt-4o-mini"),
+                            text,
+                            "custom",
+                            system_prompt
+                        )
+                    elif api_name == "Anthropic":
+                        result = anthropic_client.correct_text_anthropic(
+                            self.api_keys.get("Anthropic", ""),
+                            self.current_models.get("Anthropic", "claude-3-5-sonnet-20241022"),
+                            text,
+                            "custom",
+                            system_prompt
+                        )
+                    elif api_name == "Gemini":
+                        result = gemini_client.correct_text_gemini(
+                            self.api_keys.get("Gemini", ""),
+                            self.current_models.get("Gemini", "gemini-1.5-flash"),
+                            text,
+                            "custom",
+                            system_prompt
+                        )
+                    elif api_name == "DeepSeek":
+                        result = deepseek_client.correct_text_deepseek(
+                            self.api_keys.get("DeepSeek", ""),
+                            self.current_models.get("DeepSeek", "deepseek-chat"),
+                            text,
+                            "custom",
+                            system_prompt
+                        )
+
+                    # Zaktualizuj GUI w głównym wątku
+                    if result:
+                        self.root.after(0, lambda: self.handle_single_api_result(api_index, result, action_name))
+                    else:
+                        self.root.after(0, lambda: self.handle_single_api_error(api_index, f"Brak odpowiedzi z {api_name}", action_name))
+
+                except Exception as e:
+                    self.root.after(0, lambda: self.handle_single_api_error(api_index, str(e), action_name))
+
+            # Uruchom w osobnym wątku
+            thread = threading.Thread(target=run_api_request, daemon=True)
+            thread.start()
+
+        except Exception as e:
+            self.log_message(f"Błąd podczas ponownego przetwarzania: {e}")
+            print(f"ERROR: reprocess_single_panel: {e}")
+
+    def handle_single_api_result(self, api_index, result, action_name):
+        """Obsługuje wynik z ponownego przetworzenia dla pojedynczego panelu"""
+        try:
+            # Zapisz wynik
+            self.api_results[api_index] = result
+
+            # Ukryj loader
+            if hasattr(self.api_loaders[api_index], 'stop'):
+                self.api_loaders[api_index].stop()
+            self.api_text_widgets[api_index].lift()
+
+            # Aktualizuj text widget
+            self.api_text_widgets[api_index].configure(state="normal")
+            self.api_text_widgets[api_index].delete("1.0", "end")
+            self.api_text_widgets[api_index].insert("1.0", result)
+            self.api_text_widgets[api_index].configure(state="disabled")
+
+            # Włącz przyciski
+            self.api_buttons[api_index].configure(state="normal")
+            self.api_action_buttons[api_index].configure(state="normal")
+            self.api_cancel_buttons[api_index].configure(state="disabled")
+
+            self.log_message(f"Zakończono {action_name} dla {self.api_names[api_index]}")
+
+        except Exception as e:
+            self.log_message(f"Błąd podczas obsługi wyniku {action_name}: {e}")
+
+    def handle_single_api_error(self, api_index, error_message, action_name):
+        """Obsługuje błąd z ponownego przetworzenia dla pojedynczego panelu"""
+        try:
+            # Ukryj loader
+            if hasattr(self.api_loaders[api_index], 'stop'):
+                self.api_loaders[api_index].stop()
+            self.api_text_widgets[api_index].lift()
+
+            # Pokaż błąd
+            self.api_text_widgets[api_index].configure(state="normal")
+            self.api_text_widgets[api_index].delete("1.0", "end")
+            self.api_text_widgets[api_index].insert("1.0", f"Błąd {action_name}: {error_message}")
+            self.api_text_widgets[api_index].configure(state="disabled")
+
+            # Włącz wszystkie przyciski po błędzie
+            self.api_buttons[api_index].configure(state="normal")
+            self.api_action_buttons[api_index].configure(state="normal")
+            self.api_cancel_buttons[api_index].configure(state="disabled")
+
+            self.log_message(f"Błąd {action_name} dla {self.api_names[api_index]}: {error_message}")
+
+        except Exception as e:
+            self.log_message(f"Błąd podczas obsługi błędu {action_name}: {e}")
+
     def use_api_result(self, idx):
         """Używa wyniku z wybranego API - kopiuje do schowka i symuluje Ctrl+V."""
         if idx not in self.api_results:
