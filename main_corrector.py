@@ -881,10 +881,10 @@ class MultiAPICorrector(ctk.CTk):
                 values=["⚙️ Akcje", "✨ Profesjonalizuj", "🇺🇸 Na angielski", "🇵🇱 Na polski"],
                 width=120,
                 height=25,
-                fg_color="#ffffff20",
-                button_color="#ffffff30",
-                button_hover_color="#ffffff40",
-                text_color="white",
+                fg_color="#cccccc",
+                button_color="#e0e0e0",
+                button_hover_color="#f0f0f0",
+                text_color="black",
                 command=lambda value, idx=i: self.handle_action_menu(idx, value)
             )
             action_button.pack(side="right", padx=5)
