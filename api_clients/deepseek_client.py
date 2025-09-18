@@ -79,59 +79,59 @@ def correct_text_deepseek(api_key, model, text_to_correct, instruction_prompt, s
     try:
         # Usprawniony klient z dłuższymi timeoutami dla DeepSeek
         client = _get_http_client()
-            # Streaming jeśli dostępny callback
-            if callable(on_chunk):
-                payload["stream"] = True
-                collected_text = []
-                
-                with client.stream("POST", DEEPSEEK_API_ENDPOINT, headers=headers, json=payload) as response:
-                    response.raise_for_status()
-                    for line in response.iter_lines():
-                        if line.startswith("data: "):
-                            data_str = line[6:]  # Remove "data: "
-                            if data_str.strip() == "[DONE]":
-                                break
-                            try:
-                                import json
-                                chunk_data = json.loads(data_str)
-                                if chunk_data.get("choices") and len(chunk_data["choices"]) > 0:
-                                    delta = chunk_data["choices"][0].get("delta", {})
-                                    content = delta.get("content", "")
-                                    if content:
-                                        collected_text.append(content)
-                                        try:
-                                            on_chunk(content)
-                                        except Exception:
-                                            pass
-                            except Exception:
-                                continue
-                
-                corrected_text = "".join(collected_text).strip()
-                if corrected_text:
-                    return corrected_text
-                else:
-                    logger.warning("DeepSeek streaming nie zwróciło treści")
-                    return "Błąd: Nie otrzymano treści ze streaming DeepSeek API."
-            
-            # Fallback do non-streaming
-            response = client.post(DEEPSEEK_API_ENDPOINT, headers=headers, json=payload)
-            response.raise_for_status()
+        # Streaming jeśli dostępny callback
+        if callable(on_chunk):
+            payload["stream"] = True
+            collected_text = []
 
-            response_data = response.json()
+            with client.stream("POST", DEEPSEEK_API_ENDPOINT, headers=headers, json=payload) as response:
+                response.raise_for_status()
+                for line in response.iter_lines():
+                    if line.startswith("data: "):
+                        data_str = line[6:]  # Remove "data: "
+                        if data_str.strip() == "[DONE]":
+                            break
+                        try:
+                            import json
+                            chunk_data = json.loads(data_str)
+                            if chunk_data.get("choices") and len(chunk_data["choices"]) > 0:
+                                delta = chunk_data["choices"][0].get("delta", {})
+                                content = delta.get("content", "")
+                                if content:
+                                    collected_text.append(content)
+                                    try:
+                                        on_chunk(content)
+                                    except Exception:
+                                        pass
+                        except Exception:
+                            continue
 
-            if response_data.get("choices") and len(response_data["choices"]) > 0:
-                message = response_data["choices"][0].get("message")
-                if message and message.get("content"):
-                    corrected_text = message["content"].strip()
-                    return corrected_text
-                else:
-                    error_msg = "Brak treści w odpowiedzi API"
-                    logger.error(f"{error_msg}. Response: {response_data}")
-                    return f"Błąd DeepSeek: {error_msg}"
+            corrected_text = "".join(collected_text).strip()
+            if corrected_text:
+                return corrected_text
             else:
-                error_detail = response_data.get("error", {}).get("message", "Brak szczegółów błędu")
-                logger.error(f"Brak 'choices' w odpowiedzi API. Error: {error_detail}")
-                return f"Błąd DeepSeek: Brak 'choices' w odpowiedzi API. Szczegóły: {error_detail}"
+                logger.warning("DeepSeek streaming nie zwróciło treści")
+                return "Błąd: Nie otrzymano treści ze streaming DeepSeek API."
+
+        # Fallback do non-streaming
+        response = client.post(DEEPSEEK_API_ENDPOINT, headers=headers, json=payload)
+        response.raise_for_status()
+
+        response_data = response.json()
+
+        if response_data.get("choices") and len(response_data["choices"]) > 0:
+            message = response_data["choices"][0].get("message")
+            if message and message.get("content"):
+                corrected_text = message["content"].strip()
+                return corrected_text
+            else:
+                error_msg = "Brak treści w odpowiedzi API"
+                logger.error(f"{error_msg}. Response: {response_data}")
+                return f"Błąd DeepSeek: {error_msg}"
+        else:
+            error_detail = response_data.get("error", {}).get("message", "Brak szczegółów błędu")
+            logger.error(f"Brak 'choices' w odpowiedzi API. Error: {error_detail}")
+            return f"Błąd DeepSeek: Brak 'choices' w odpowiedzi API. Szczegóły: {error_detail}"
 
     except (httpx.TimeoutException, httpx.ReadTimeout, httpx.ConnectTimeout) as e:
         logger.error(f"Timeout DeepSeek API: {e}", exc_info=True)
