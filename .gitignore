@@ -78,6 +78,7 @@ config.ini
 # Documentation (except README.md)
 *.md
 !README.md
+!AGENTS.md
 
 # Test files
 test_*.py
