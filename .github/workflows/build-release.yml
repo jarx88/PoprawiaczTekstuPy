@@ -12,21 +12,8 @@ on:
         type: string
 
 jobs:
-  build-multi-platform:
-    strategy:
-      matrix:
-        include:
-          - os: windows-latest
-            spec: popraw_tekst_modern.spec
-            executable: popraw_tekst_modern.exe
-            artifact-name: popraw-tekst-windows
-            
-          - os: ubuntu-latest
-            spec: popraw_tekst_linux.spec
-            executable: popraw_tekst_modern_linux
-            artifact-name: popraw-tekst-linux
-            
-    runs-on: ${{ matrix.os }}
+  build-windows:
+    runs-on: windows-latest
     
     steps:
     - name: Checkout code
@@ -40,56 +27,38 @@ jobs:
     - name: Cache pip
       uses: actions/cache@v4
       with:
-        path: ${{ runner.os == 'Windows' && '~\\AppData\\Local\\pip\\Cache' || '~/.cache/pip' }}
-        key: pip-${{ runner.os }}-${{ hashFiles('requirements.txt') }}
-        
-    - name: Install system dependencies (Linux only)
-      if: matrix.os == 'ubuntu-latest'
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y python3-tk
-        
+        path: ~\AppData\Local\pip\Cache
+        key: pip-windows-${{ hashFiles('requirements.txt') }}
+
     - name: Install Python dependencies
       run: |
         python -m pip install --upgrade pip
         pip install -U -r requirements.txt
         pip install -U pyinstaller
-        
+
     - name: Build executable
       run: |
-        pyinstaller --clean --noconfirm ${{ matrix.spec }}
-        
-    - name: Verify build (Windows)
-      if: matrix.os == 'windows-latest'
+        pyinstaller --clean --noconfirm popraw_tekst_modern.spec
+
+    - name: Verify build
       run: |
-        if (Test-Path "dist/${{ matrix.executable }}") {
+        if (Test-Path "dist/popraw_tekst_modern.exe") {
           Write-Host "✅ Windows executable created"
-          Get-Item "dist/${{ matrix.executable }}" | Select-Object Name, Length
+          Get-Item "dist/popraw_tekst_modern.exe" | Select-Object Name, Length
         } else {
           Write-Host "❌ Windows build failed"
           exit 1
         }
-        
-    - name: Verify build (Linux)
-      if: matrix.os == 'ubuntu-latest'
-      run: |
-        if [ -f "dist/${{ matrix.executable }}" ]; then
-          echo "✅ Linux executable created"
-          ls -la "dist/${{ matrix.executable }}"
-        else
-          echo "❌ Linux build failed"
-          exit 1
-        fi
-        
+
     - name: Upload executable
       uses: actions/upload-artifact@v4
       with:
-        name: ${{ matrix.artifact-name }}
-        path: dist/${{ matrix.executable }}
+        name: popraw-tekst-windows
+        path: dist/popraw_tekst_modern.exe
         retention-days: 90
 
   create-release:
-    needs: build-multi-platform
+    needs: build-windows
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
     
@@ -123,29 +92,31 @@ jobs:
         name: PoprawiaczTekstuPy ${{ steps.version.outputs.version }}
         body: |
           ## PoprawiaczTekstuPy ${{ steps.version.outputs.version }}
-          
+
           ### Zmiany w tej wersji:
           - ✅ Nowoczesny GUI (CustomTkinter)
           - ✅ Lepsza wydajność i stabilność
           - ✅ System tray support
           - ✅ Dark/Light mode
           - ✅ Poprawki hotkey handling
-          
+          - ✅ Dropdown menu z akcjami w panelach API
+
           ### Pliki do pobrania:
-          - **Windows**: `popraw_tekst_modern.exe` 
-          - **Linux**: `popraw_tekst_modern_linux`
-          
+          - **Windows**: `popraw_tekst_modern.exe`
+
           ### Instalacja:
-          1. Pobierz odpowiedni plik dla swojego systemu
-          2. Na Windows: uruchom `popraw_tekst_modern.exe`
-          3. Na Linux: `chmod +x popraw_tekst_modern_linux && ./popraw_tekst_modern_linux`
-          
-          ### API Keys:
-          Skonfiguruj klucze API w ustawieniach aplikacji.
-          
+          1. Pobierz plik `popraw_tekst_modern.exe`
+          2. Uruchom aplikację
+          3. Skonfiguruj klucze API w ustawieniach
+
+          ### Nowe funkcje:
+          - Ikona ⚙️ w każdym panelu API pozwala na:
+            - ✨ Zmianę tonu na profesjonalny
+            - 🇺🇸 Tłumaczenie na angielski
+            - 🇵🇱 Tłumaczenie na polski
+
         files: |
           artifacts/popraw-tekst-windows/popraw_tekst_modern.exe
-          artifacts/popraw-tekst-linux/popraw_tekst_modern_linux
         draft: false
         prerelease: false
       env:

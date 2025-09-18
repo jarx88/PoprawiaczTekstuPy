@@ -9,6 +9,25 @@ from utils.logger import log_api_error, log_connection_error, log_timeout_error,
 from gui.prompts import get_system_prompt
 from .base_client import DEFAULT_TIMEOUT, QUICK_TIMEOUT, CONNECTION_TIMEOUT, DEFAULT_RETRIES, APITimeoutError, DEEPSEEK_TIMEOUT
 
+_DEEPSEEK_CLIENT_CACHE = None
+
+def _get_http_client():
+    """Reużywalny httpx.Client z HTTP/2 i keep-alive dla DeepSeek."""
+    global _DEEPSEEK_CLIENT_CACHE
+    if _DEEPSEEK_CLIENT_CACHE is not None:
+        return _DEEPSEEK_CLIENT_CACHE
+    _DEEPSEEK_CLIENT_CACHE = httpx.Client(
+        http2=True,
+        timeout=httpx.Timeout(
+            connect=CONNECTION_TIMEOUT,
+            read=DEEPSEEK_TIMEOUT,
+            write=CONNECTION_TIMEOUT,
+            pool=CONNECTION_TIMEOUT,
+        ),
+        limits=httpx.Limits(max_keepalive_connections=10, keepalive_expiry=30.0),
+    )
+    return _DEEPSEEK_CLIENT_CACHE
+
 DEEPSEEK_API_ENDPOINT = "https://api.deepseek.com/chat/completions" # Standardowy endpoint
 
 def show_connection_error():
@@ -59,14 +78,7 @@ def correct_text_deepseek(api_key, model, text_to_correct, instruction_prompt, s
 
     try:
         # Usprawniony klient z dłuższymi timeoutami dla DeepSeek
-        with httpx.Client(
-            timeout=httpx.Timeout(
-                connect=CONNECTION_TIMEOUT,  # 8s na połączenie
-                read=DEEPSEEK_TIMEOUT,       # 35s na odczyt - zwiększone dla DeepSeek
-                write=CONNECTION_TIMEOUT,    # 8s na zapis
-                pool=CONNECTION_TIMEOUT      # 8s na pool
-            )
-        ) as client:
+        client = _get_http_client()
             # Streaming jeśli dostępny callback
             if callable(on_chunk):
                 payload["stream"] = True

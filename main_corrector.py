@@ -1802,9 +1802,10 @@ class MultiAPICorrector(ctk.CTk):
             menu = tk.Menu(self, tearoff=0)
 
             # Ustaw większą czcionkę dla menu (skalowanie HiDPI)
+            menu_font = None
             try:
                 import tkinter.font as tkfont
-                menu_font_size = max(12, int(14 * (getattr(self, "scale_factor", 1.0) or 1.0)))
+                menu_font_size = max(14, int(18 * (getattr(self, "scale_factor", 1.0) or 1.0)))
                 try:
                     menu_font = tkfont.Font(family="Segoe UI", size=menu_font_size)
                 except Exception:
@@ -1816,20 +1817,24 @@ class MultiAPICorrector(ctk.CTk):
                 except Exception:
                     pass
             except Exception:
-                pass
+                menu_font = None
 
             # Dodaj opcje do menu
+            item_kwargs = {"font": menu_font} if menu_font else {}
             menu.add_command(
                 label="✨ Zmień na profesjonalny ton",
-                command=functools.partial(self.reprocess_single_panel, api_index, current_text, "professional", "profesjonalizacji")
+                command=functools.partial(self.reprocess_single_panel, api_index, current_text, "professional", "profesjonalizacji"),
+                **item_kwargs
             )
             menu.add_command(
                 label="🇺🇸 Przetłumacz na angielski",
-                command=functools.partial(self.reprocess_single_panel, api_index, current_text, "translate_en", "tłumaczenia na angielski")
+                command=functools.partial(self.reprocess_single_panel, api_index, current_text, "translate_en", "tłumaczenia na angielski"),
+                **item_kwargs
             )
             menu.add_command(
                 label="🇵🇱 Przetłumacz na polski",
-                command=functools.partial(self.reprocess_single_panel, api_index, current_text, "translate_pl", "tłumaczenia na polski")
+                command=functools.partial(self.reprocess_single_panel, api_index, current_text, "translate_pl", "tłumaczenia na polski"),
+                **item_kwargs
             )
 
             # Pokaż menu w pozycji przycisku

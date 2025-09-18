@@ -47,6 +47,41 @@ def handle_api_error(e):
         return True
     return False
 
+_OPENAI_CLIENT_CACHE = {}
+
+
+def _get_openai_client(api_key: str) -> openai.OpenAI:
+    """Zwraca cache'owanego klienta OpenAI z HTTP/2 i połączeniami keep-alive."""
+    client = _OPENAI_CLIENT_CACHE.get(api_key)
+    if client is not None:
+        return client
+
+    http_client = httpx.Client(
+        http2=True,
+        timeout=httpx.Timeout(
+            connect=CONNECTION_TIMEOUT,
+            read=DEFAULT_TIMEOUT,
+            write=CONNECTION_TIMEOUT,
+            pool=CONNECTION_TIMEOUT,
+        ),
+        limits=httpx.Limits(max_keepalive_connections=10, keepalive_expiry=30.0),
+    )
+
+    client = openai.OpenAI(
+        api_key=api_key,
+        timeout=httpx.Timeout(
+            connect=CONNECTION_TIMEOUT,
+            read=DEFAULT_TIMEOUT,
+            write=CONNECTION_TIMEOUT,
+            pool=CONNECTION_TIMEOUT,
+        ),
+        max_retries=DEFAULT_RETRIES,
+        http_client=http_client,
+    )
+    _OPENAI_CLIENT_CACHE[api_key] = client
+    return client
+
+
 def correct_text_openai(api_key, model, text_to_correct, instruction_prompt, system_prompt, on_chunk=None):
     """Poprawia tekst używając OpenAI API."""
     
@@ -64,25 +99,8 @@ def correct_text_openai(api_key, model, text_to_correct, instruction_prompt, sys
     logger.info(f"Wysyłanie zapytania do OpenAI API (model: {model}). Tekst: {text_to_correct[:50]}...") # Logowanie rozpoczęcia zapytania
 
     try:
-        # Inicjalizacja klienta OpenAI z ulepszoną konfiguracją
-        client = openai.OpenAI(
-            api_key=api_key,
-            timeout=httpx.Timeout(
-                connect=CONNECTION_TIMEOUT,  # 5s na połączenie
-                read=DEFAULT_TIMEOUT,        # 15s na odczyt
-                write=CONNECTION_TIMEOUT,    # 5s na zapis
-                pool=CONNECTION_TIMEOUT      # 5s na pool
-            ),
-            max_retries=DEFAULT_RETRIES,  # 2 próby zamiast 3
-            http_client=httpx.Client(
-                timeout=httpx.Timeout(
-                    connect=CONNECTION_TIMEOUT,
-                    read=DEFAULT_TIMEOUT,
-                    write=CONNECTION_TIMEOUT,
-                    pool=CONNECTION_TIMEOUT
-                )
-            )
-        )
+        # Klient OpenAI – HTTP/2 oraz keep-alive (cache per api_key)
+        client = _get_openai_client(api_key)
 
         # Użyj przekazanego system_prompt; jeśli pusty, wybierz wg stylu
         if not system_prompt:
