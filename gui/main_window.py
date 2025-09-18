@@ -1245,6 +1245,13 @@ class MainWindow(QMainWindow):
         dialog.setMinimumSize(min_w, min_h)
         dialog.setMaximumSize(max_w, max_h)
         dialog.resize(def_w, def_h)
+
+        # Blokuj ręczne powiększanie
+        dialog.setFixedSize(def_w, def_h)
+
+        # Debug info - można usunąć po testach
+        print(f"DEBUG Original Text Dialog: main={main_w}x{main_h}")
+        print(f"DEBUG Original Text Dialog: fixed_size={def_w}x{def_h}, max={max_w}x{max_h}")
         layout = QVBoxLayout(dialog)
         text_edit = QTextEdit(self.s_original_text_content)
         text_edit.setReadOnly(True)
@@ -1704,10 +1711,10 @@ class MainWindow(QMainWindow):
             dpi_scale = screen.devicePixelRatio()
             logical_dpi = screen.logicalDotsPerInch()
 
-            # Dla ekranów wysokiej rozdzielczości użyj mniejszych proporcji
+            # Dla ekranów wysokiej rozdzielczości użyj rozsądnych proporcji
             if logical_dpi > 120 or dpi_scale > 1.5:  # Ekrany wysokiej rozdzielczości
-                width_ratio = 0.5   # 50% szerokości dla HiDPI
-                height_ratio = 0.6  # 60% wysokości dla HiDPI
+                width_ratio = 0.65  # 65% szerokości dla HiDPI (przywrócone)
+                height_ratio = 0.70 # 70% wysokości dla HiDPI (przywrócone)
             elif logical_dpi > 96 or dpi_scale > 1.25:  # Średnie skalowanie
                 width_ratio = 0.6   # 60% szerokości
                 height_ratio = 0.65 # 65% wysokości

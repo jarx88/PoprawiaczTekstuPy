@@ -53,6 +53,10 @@ class SettingsDialog(QDialog):
         self.resize(def_w, def_h)
         self.setModal(True)
 
+        # Debug info - można usunąć po testach
+        print(f"DEBUG Settings Dialog: parent={parent_w if parent else 'None'}x{parent_h if parent else 'None'}")
+        print(f"DEBUG Settings Dialog: min={min_w}x{min_h}, max={max_w}x{max_h}, default={def_w}x{def_h}")
+
         self.api_keys = dict(current_api_keys) # Kopia, aby można było anulować
         self.models = dict(current_models)
 

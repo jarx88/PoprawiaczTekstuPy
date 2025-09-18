@@ -482,15 +482,15 @@ class MultiAPICorrector(ctk.CTk):
             is_hidpi = screen_width > 1600 or screen_height > 1000
 
             if is_hidpi:
-                # Dla ekranów HiDPI użyj mniejszych proporcji
-                width_percent = 0.55   # 55% szerokości dla HiDPI
-                height_percent = 0.65  # 65% wysokości dla HiDPI
-                min_width, min_height = 800, 500
+                # Dla ekranów HiDPI - większy rozmiar ale rozumnie ograniczony
+                width_percent = 0.70   # 70% szerokości dla HiDPI (przywrócone)
+                height_percent = 0.75  # 75% wysokości dla HiDPI (przywrócone)
+                min_width, min_height = 900, 600
             else:
                 # Standardowe rozmiary dla normalnych ekranów
-                width_percent = 0.70   # 70% szerokości
-                height_percent = 0.75  # 75% wysokości
-                min_width, min_height = 900, 600
+                width_percent = 0.75   # 75% szerokości
+                height_percent = 0.80  # 80% wysokości
+                min_width, min_height = 1000, 700
         except:
             # Fallback - konserwatywne rozmiary
             width_percent = 0.60
@@ -539,9 +539,9 @@ class MultiAPICorrector(ctk.CTk):
         # Dynamiczny minimalny rozmiar na podstawie wykrytego DPI
         is_hidpi = screen_width > 1600 or screen_height > 1000
         if is_hidpi:
-            self.minsize(700, 450)  # Zmniejszony minimalny rozmiar dla HiDPI
+            self.minsize(900, 600)  # Przywrócony większy minimalny rozmiar dla HiDPI
         else:
-            self.minsize(800, 550)  # Standardowy minimalny rozmiar
+            self.minsize(1000, 700)  # Standardowy minimalny rozmiar
         
         # Zapisz aktualne wymiary ekranu
         self.last_screen_width = screen_width
@@ -677,14 +677,7 @@ class MultiAPICorrector(ctk.CTk):
                 self.original_text_window.deiconify()
                 self.original_text_window.lift()
                 self.original_text_window.focus_force()
-                _enforce_window_display_bounds(
-                    self.original_text_window,
-                    self,
-                    min_width,
-                    min_height,
-                    padding_x,
-                    padding_y,
-                )
+                # Nie używamy _enforce_window_display_bounds - zapobiega automatycznemu powiększaniu
             except Exception:
                 pass
             self._update_original_text_view()
@@ -757,17 +750,8 @@ class MultiAPICorrector(ctk.CTk):
 
         self.original_text_window = window
         self.original_text_textbox = textbox
-        window.after(
-            150,
-            lambda: _enforce_window_display_bounds(
-                window,
-                self,
-                min_width,
-                min_height,
-                padding_x,
-                padding_y,
-            ),
-        )
+        # NIE UŻYWAMY _enforce_window_display_bounds dla dialogu oryginalnego tekstu
+        # aby zapobiec automatycznemu powiększaniu
 
     def rescale_ui_components(self):
         """Przeskalowuje komponenty UI na podstawie scale_factor."""
