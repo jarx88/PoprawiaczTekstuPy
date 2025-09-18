@@ -84,8 +84,11 @@ def correct_text_openai(api_key, model, text_to_correct, instruction_prompt, sys
             )
         )
 
-        # Pobierz odpowiedni system prompt w zależności od stylu
-        current_system_prompt = get_system_prompt("prompt" if "prompt" in instruction_prompt.lower() else "normal")
+        # Użyj przekazanego system_prompt; jeśli pusty, wybierz wg stylu
+        if not system_prompt:
+            current_system_prompt = get_system_prompt("prompt" if "prompt" in instruction_prompt.lower() else "normal")
+        else:
+            current_system_prompt = system_prompt
         
         # Przygotowanie wiadomości dla Chat Completions API
         messages = [

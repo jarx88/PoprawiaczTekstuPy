@@ -23,9 +23,10 @@ def handle_api_error(e):
     return False
 
 def correct_text_anthropic(api_key, model, text_to_correct, instruction_prompt, system_prompt, on_chunk=None):
-    # Określenie stylu na podstawie zawartości instruction_prompt
-    style = "prompt" if "prompt" in instruction_prompt.lower() else "normal"
-    system_prompt = get_system_prompt(style)
+    # Nie nadpisuj przekazanego system_prompt – jeśli pusty, wybierz wg stylu
+    if not system_prompt:
+        style = "prompt" if "prompt" in instruction_prompt.lower() else "normal"
+        system_prompt = get_system_prompt(style)
     """Poprawia tekst używając Anthropic API."""
     if not api_key:
         logger.warning("Próba użycia Anthropic API bez klucza.") # Logowanie ostrzeżenia

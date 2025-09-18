@@ -1,6 +1,16 @@
 instructions = {
     "normal": "Correct the following text, preserving its formatting (including all enters and paragraphs). Return ONLY the corrected text, without any additional headers, separators, or comments.",
-    "professional": "Correct the following text in a professional and formal style, preserving its formatting.",
+    "professional": (
+        "Rewrite the following text into a professional, formal register."
+        " Preserve the original meaning and formatting (paragraphs, lists, line breaks)."
+        " Always adjust tone to business/professional Polish:"
+        " - remove colloquialisms, emojis, exclamation-heavy rhetoric"
+        " - prefer neutral/impersonal or formal address (Państwo / trzecia osoba)"
+        " - replace casual verbs and particles with precise, formal equivalents"
+        " - standardize punctuation and capitalization"
+        " - ensure clear, concise, and courteous phrasing"
+        " IMPORTANT: Do not return the input unchanged; refine it to a consistently formal style."
+    ),
     "translate_en": "YOUR SOLE TASK IS TO TRANSLATE THE FOLLOWING TEXT INTO ENGLISH. Preserve the original formatting (paragraphs, lists, etc.). Do not correct the text, only translate it.",
     "translate_pl": "YOUR SOLE TASK IS TO TRANSLATE THE FOLLOWING TEXT INTO POLISH. Preserve the original formatting (paragraphs, lists, etc.). Do not correct the text, only translate it.",
     "change_meaning": "Propose a completely new text based on the one below, preserving the formatting.",
@@ -32,6 +42,19 @@ system_prompt = (
     "If the task is a translation, the output should be only the translated text. If the task is correction, the output should be only the corrected Polish text."
 )
 
+professional_system_prompt = (
+    "You are a senior Polish-language editor specializing in transforming texts"
+    " into a consistent, formal, business-appropriate register."
+    " Apply the following rules rigorously:\n"
+    "1. Tone: neutral, courteous, and professional; no colloquialisms or emojis.\n"
+    "2. Register: prefer impersonal constructions or formal address (Państwo),"
+    "   avoid second-person singular unless the genre requires it.\n"
+    "3. Clarity: shorter sentences where appropriate; remove filler words; keep the meaning intact.\n"
+    "4. Precision: prefer precise vocabulary; correct punctuation and typography.\n"
+    "5. Formatting: strictly preserve paragraphs, lists, and line breaks.\n"
+    "6. Output: return ONLY the final, professionally restyled Polish text—no comments or markers."
+)
+
 prompt_system_prompt = (
     "You are an AI assistant that transforms user requests into direct, executable commands. Follow these rules:\n"
     "1. **Be direct**: Convert requests into simple, imperative statements.\n"
@@ -54,6 +77,8 @@ def get_system_prompt(style="normal"):
     """Returns the appropriate system prompt based on the selected style"""
     if style == 'prompt':
         return prompt_system_prompt
+    if style == 'professional':
+        return professional_system_prompt
     return system_prompt
 
 def get_instruction_prompt(style="normal"):
