@@ -5,7 +5,7 @@ from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QGridLayout, QLabel, QComboBox, QPushButton, QTextEdit, QGroupBox,
     QSizePolicy, QScrollArea, QDialog, QDialogButtonBox, QSystemTrayIcon, QMenu,
-    QStatusBar, QMessageBox, QProgressBar, QStackedWidget
+    QStatusBar, QMessageBox, QProgressBar, QStackedWidget, QToolButton
 )
 from PyQt6.QtGui import QIcon, QFont, QColor, QPalette, QAction, QMovie
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QSize, QEvent
@@ -14,6 +14,7 @@ import os
 import re
 import logging # Importujemy moduł logging
 import time
+from functools import partial
 from .settings_dialog import SettingsDialog
 import configparser
 import webbrowser
@@ -595,6 +596,7 @@ class MainWindow(QMainWindow):
         self.api_edits = []
         self.api_status_labels = []
         self.api_select_buttons = []
+        self.api_action_buttons = [] # Lista przycisków akcji (profesjonalizacja, tłumaczenie)
         self.api_movies = {}  # Słownik do przechowywania QMovie dla każdego API
         self.api_loader_widgets = [] # Lista do przechowywania QLabel z animacją GIF dla każdego API
         self.api_text_edit_stacks = [] # Lista do przechowywania QStackedWidget dla każdego API
@@ -620,6 +622,38 @@ class MainWindow(QMainWindow):
             status_label.setWordWrap(True)
             self.api_status_labels.append(status_label)
             header_layout.addWidget(status_label)
+
+            # Przycisk akcji (ikona) dla dodatkowych opcji
+            action_button = QToolButton()
+            action_button.setFixedSize(24, 24)
+            action_button.setToolTip(f"Dodatkowe akcje dla {name}")
+            action_icon = self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogDetailedView)
+            action_button.setIcon(action_icon)
+            action_button.setStyleSheet("QToolButton { background-color: transparent; border: none; }")
+            action_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+
+            # Tworzenie menu akcji
+            action_menu = QMenu(action_button)
+
+            # Akcja profesjonalizacji
+            professionalize_action = QAction("✨ Zmień ton na profesjonalny", self)
+            professionalize_action.triggered.connect(partial(self._on_professionalize_action, i))
+            action_menu.addAction(professionalize_action)
+
+            # Akcja tłumaczenia na angielski
+            translate_to_en_action = QAction("🇺🇸 Przetłumacz na angielski", self)
+            translate_to_en_action.triggered.connect(partial(self._on_translate_to_en_action, i))
+            action_menu.addAction(translate_to_en_action)
+
+            # Akcja tłumaczenia na polski
+            translate_to_pl_action = QAction("🇵🇱 Przetłumacz na polski", self)
+            translate_to_pl_action.triggered.connect(partial(self._on_translate_to_pl_action, i))
+            action_menu.addAction(translate_to_pl_action)
+
+            action_button.setMenu(action_menu)
+            self.api_action_buttons.append(action_button)
+
+            header_layout.addWidget(action_button, alignment=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
             # Przycisk Anuluj (ikona) dla pojedynczego API
             cancel_single_button_icon = QPushButton("") # Pusty tekst, tylko ikona
@@ -855,6 +889,10 @@ class MainWindow(QMainWindow):
             self.api_select_buttons[i].setToolTip("Oczekiwanie na wynik API...")
             status_label.setToolTip("")
 
+            # Wyłącz przyciski akcji podczas przetwarzania
+            if hasattr(self, 'api_action_buttons') and i < len(self.api_action_buttons):
+                self.api_action_buttons[i].setEnabled(False)
+
             # Przełączenie na QLabel z animacją i uruchomienie jej
             if i < len(self.api_text_edit_stacks) and i in self.api_movies:
                 # Upewnij się, że loader_widget (QLabel z GIFem) istnieje dla tego indeksu
@@ -1081,12 +1119,18 @@ class MainWindow(QMainWindow):
                     logger.error(f"Błąd API {api_name}: {result_text}") # Logujemy błąd otrzymany z wątku
                     if api_index < len(self.api_select_buttons):
                         self.api_select_buttons[api_index].setEnabled(False) # Wyłącz przycisk wyboru
+                    # Wyłącz przycisk akcji w przypadku błędu
+                    if hasattr(self, 'api_action_buttons') and api_index < len(self.api_action_buttons):
+                        self.api_action_buttons[api_index].setEnabled(False)
                 else:
                     self.api_status_labels[api_index].setText("Status: Gotowy")
                     self.api_status_labels[api_index].setStyleSheet("color: #28a745; font-style: normal;") # Zielony
                     logger.info(f"API {api_name} zakończyło sukcesem.") # Logujemy sukces
                     if api_index < len(self.api_select_buttons):
                         self.api_select_buttons[api_index].setEnabled(True) # Włącz przycisk wyboru
+                    # Włącz przycisk akcji jeśli istnieje
+                    if hasattr(self, 'api_action_buttons') and api_index < len(self.api_action_buttons):
+                        self.api_action_buttons[api_index].setEnabled(True)
 
             # Wyłącz przycisk anulowania pojedynczego API, gdy wątek zakończył działanie
             if 0 <= api_index < len(self.api_cancel_single_buttons):
@@ -1930,6 +1974,158 @@ class MainWindow(QMainWindow):
             
         except Exception as e:
             logger.error(f"Błąd podczas pełnego cleanup: {e}", exc_info=True)
+
+    def _on_professionalize_action(self, api_index):
+        """Obsługuje akcję profesjonalizacji tekstu dla danego panelu API"""
+        try:
+            if 0 <= api_index < len(self.api_edits):
+                current_text = self.api_edits[api_index].toPlainText().strip()
+                if not current_text:
+                    self._update_status(f"Brak tekstu do profesjonalizacji w panelu {api_index + 1}.")
+                    return
+
+                # Uruchom ponowne przetwarzanie z promptem profesjonalizacji
+                self._reprocess_text_for_panel(api_index, current_text, "professionalize")
+        except Exception as e:
+            logger.error(f"Błąd podczas akcji profesjonalizacji dla panelu {api_index}: {e}", exc_info=True)
+            self._update_status(f"Błąd podczas profesjonalizacji: {e}")
+
+    def _on_translate_to_en_action(self, api_index):
+        """Obsługuje akcję tłumaczenia na angielski dla danego panelu API"""
+        try:
+            if 0 <= api_index < len(self.api_edits):
+                current_text = self.api_edits[api_index].toPlainText().strip()
+                if not current_text:
+                    self._update_status(f"Brak tekstu do tłumaczenia w panelu {api_index + 1}.")
+                    return
+
+                # Uruchom ponowne przetwarzanie z promptem tłumaczenia na EN
+                self._reprocess_text_for_panel(api_index, current_text, "translate_to_en")
+        except Exception as e:
+            logger.error(f"Błąd podczas akcji tłumaczenia na angielski dla panelu {api_index}: {e}", exc_info=True)
+            self._update_status(f"Błąd podczas tłumaczenia na angielski: {e}")
+
+    def _on_translate_to_pl_action(self, api_index):
+        """Obsługuje akcję tłumaczenia na polski dla danego panelu API"""
+        try:
+            if 0 <= api_index < len(self.api_edits):
+                current_text = self.api_edits[api_index].toPlainText().strip()
+                if not current_text:
+                    self._update_status(f"Brak tekstu do tłumaczenia w panelu {api_index + 1}.")
+                    return
+
+                # Uruchom ponowne przetwarzanie z promptem tłumaczenia na PL
+                self._reprocess_text_for_panel(api_index, current_text, "translate_to_pl")
+        except Exception as e:
+            logger.error(f"Błąd podczas akcji tłumaczenia na polski dla panelu {api_index}: {e}", exc_info=True)
+            self._update_status(f"Błąd podczas tłumaczenia na polski: {e}")
+
+    def _reprocess_text_for_panel(self, api_index, text, action_type):
+        """Ponownie przetwarza tekst dla konkretnego panelu z określoną akcją"""
+        try:
+            # Sprawdź czy panel jest w zakresie
+            if not (0 <= api_index < len(self.api_providers_config)):
+                logger.error(f"Nieprawidłowy indeks panelu API: {api_index}")
+                return
+
+            provider_name, model, _, _ = self.api_providers_config[api_index]
+
+            # Anuluj istniejące sesje dla tego panelu
+            if api_index in self.api_threads and self.api_threads[api_index]:
+                logger.info(f"Anulowanie poprzedniej sesji dla panelu {api_index}")
+                self.api_threads[api_index].cancel()
+
+            # Przygotuj prompt na podstawie typu akcji
+            if action_type == "professionalize":
+                system_prompt = "Zmień ton tego tekstu na profesjonalny, zachowując jego znaczenie i strukturę."
+            elif action_type == "translate_to_en":
+                system_prompt = "Przetłumacz ten tekst na język angielski, zachowując jego znaczenie i ton."
+            elif action_type == "translate_to_pl":
+                system_prompt = "Przetłumacz ten tekst na język polski, zachowując jego znaczenie i ton."
+            else:
+                logger.error(f"Nieznany typ akcji: {action_type}")
+                return
+
+            # Aktualizuj status panelu
+            self.api_status_labels[api_index].setText(f"Status: {action_type.replace('_', ' ').title()}...")
+
+            # Wyłącz przyciski dla tego panelu
+            self.api_select_buttons[api_index].setEnabled(False)
+            if hasattr(self, 'api_action_buttons'):
+                self.api_action_buttons[api_index].setEnabled(False)
+
+            # Pokaż loader dla tego panelu
+            if api_index < len(self.api_text_edit_stacks):
+                self.api_text_edit_stacks[api_index].setCurrentIndex(1)
+                if api_index in self.api_movies:
+                    self.api_movies[api_index].start()
+
+            # Utwórz nowy wątek API dla tego panelu
+            api_worker = self._create_api_worker_for_panel(api_index, text, system_prompt)
+            if api_worker:
+                self.api_threads[api_index] = api_worker
+                api_worker.start()
+                logger.info(f"Rozpoczęto {action_type} dla panelu {api_index} ({provider_name})")
+
+        except Exception as e:
+            logger.error(f"Błąd podczas ponownego przetwarzania tekstu dla panelu {api_index}: {e}", exc_info=True)
+            self._update_status(f"Błąd podczas {action_type}: {e}")
+
+    def _create_api_worker_for_panel(self, api_index, text, system_prompt):
+        """Tworzy worker API dla konkretnego panelu z niestandardowym promptem"""
+        try:
+            provider_name, model, _, _ = self.api_providers_config[api_index]
+
+            # Określ funkcję API na podstawie dostawcy
+            if provider_name == "OpenAI":
+                api_function = correct_text_openai
+                api_key = self.api_keys.get("OpenAI", "")
+            elif provider_name == "Anthropic":
+                api_function = correct_text_anthropic
+                api_key = self.api_keys.get("Anthropic", "")
+            elif provider_name == "Google Gemini":
+                api_function = correct_text_gemini
+                api_key = self.api_keys.get("Gemini", "")
+            elif provider_name == "DeepSeek":
+                api_function = correct_text_deepseek
+                api_key = self.api_keys.get("DeepSeek", "")
+            else:
+                logger.error(f"Nieznany dostawca API: {provider_name}")
+                return None
+
+            # Sprawdź czy mamy klucz API
+            if not api_key:
+                logger.error(f"Brak klucza API dla {provider_name}")
+                return None
+
+            # Pobierz nazwę modelu
+            model_key = provider_name.split(" ")[0]  # "OpenAI", "Anthropic", "Google", "DeepSeek"
+            if model_key == "Google":
+                model_key = "Gemini"
+            model_name = self.current_models.get(model_key, model)
+
+            # Atomicznie zaktualizuj session_id
+            self.current_session_id += 1
+            worker = ApiWorker(
+                api_index,
+                api_function,
+                api_key,
+                model_name,
+                text,
+                "custom",  # style
+                system_prompt,
+                self.current_session_id
+            )
+
+            # Połącz sygnały
+            worker.finished_signal.connect(self._update_api_result)
+            worker.cancelled_signal.connect(self._handle_api_cancelled)
+
+            return worker
+
+        except Exception as e:
+            logger.error(f"Błąd podczas tworzenia workera API dla panelu {api_index}: {e}", exc_info=True)
+            return None
 
     def quit_application(self):
         """Prawdziwe zamknięcie aplikacji - wywołane z menu tray"""
