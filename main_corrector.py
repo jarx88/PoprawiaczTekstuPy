@@ -833,6 +833,10 @@ class MultiAPICorrector(ctk.CTk):
         self.api_progress_bars = []
         self.api_loaders = []
         self.api_loader_frames = []
+
+        # Dodatkowe mechanizmy dla custom akcji
+        self.api_action_threads = {}  # Wątki dla custom akcji
+        self.api_action_cancel_flags = {}  # Flagi anulowania dla custom akcji
         
         # Oryginalne kolory z PyQt6 aplikacji
         api_colors = {
@@ -875,20 +879,18 @@ class MultiAPICorrector(ctk.CTk):
             api_label.pack(side="left")
             self.api_labels.append(api_label)
 
-            # Action button (dropdown menu)
-            action_button = ctk.CTkOptionMenu(
+            # Action button (simple icon button)
+            action_button = ctk.CTkButton(
                 header_content,
-                values=["⚙️ Akcje", "✨ Profesjonalizuj", "🇺🇸 Na angielski", "🇵🇱 Na polski"],
-                width=120,
+                text="⚙️",
+                width=25,
                 height=25,
-                fg_color="#cccccc",
-                button_color="#e0e0e0",
-                button_hover_color="#f0f0f0",
-                text_color="black",
-                command=lambda value, idx=i: self.handle_action_menu(idx, value)
+                fg_color="transparent",
+                hover_color="transparent",
+                text_color="white",
+                command=lambda idx=i: self.cycle_action_for_panel(idx)
             )
-            action_button.pack(side="right", padx=5)
-            action_button.set("⚙️ Akcje")  # Default value
+            action_button.pack(side="right", padx=2)
             self.api_action_buttons.append(action_button)
 
             # Cancel button for single API
@@ -1697,6 +1699,14 @@ class MultiAPICorrector(ctk.CTk):
             event = self.api_cancel_events.get(idx)
             if event:
                 event.set()
+
+        # Anuluj też custom akcje jeśli są aktywne
+        if idx in self.api_action_threads and self.api_action_threads[idx].is_alive():
+            self.api_action_cancel_flags[idx] = True
+            logging.info(f"Anulowanie custom akcji dla API {idx}")
+
+            # Zaktualizuj GUI dla anulowanej custom akcji
+            self.root.after(0, lambda: self.handle_single_api_error(idx, "Anulowano przez użytkownika", "akcji"))
     
     
     def cancel_all_processing(self):
@@ -1751,19 +1761,12 @@ class MultiAPICorrector(ctk.CTk):
         self.progress_label.configure(text="")
         self.api_counter_label.configure(text="🤖 API: 0/4")
 
-    def handle_action_menu(self, api_index, selected_value):
-        """Obsługuje wybór akcji z menu dropdown dla danego panelu API"""
+    def cycle_action_for_panel(self, api_index):
+        """Cyklicznie przełącza akcje dla danego panelu API"""
         try:
             # Walidacja indeksu
             if not (0 <= api_index < len(self.api_action_buttons)):
                 self.log_message(f"Nieprawidłowy indeks API: {api_index}")
-                return
-
-            # Reset menu do domyślnej wartości
-            self.api_action_buttons[api_index].set("⚙️ Akcje")
-
-            # Sprawdź czy to pierwsza opcja (która jest tylko etykietą)
-            if selected_value == "⚙️ Akcje":
                 return
 
             # Sprawdź czy mamy wynik w tym panelu
@@ -1776,34 +1779,51 @@ class MultiAPICorrector(ctk.CTk):
                 self.log_message(f"Brak tekstu w panelu {self.api_names[api_index]} do przetworzenia")
                 return
 
-            # Określ typ akcji na podstawie wyboru
-            if selected_value == "✨ Profesjonalizuj":
-                action_type = "professionalize"
-                system_prompt = "Zmień ton tego tekstu na profesjonalny, zachowując jego znaczenie i strukturę."
+            # Inicjalizuj state dla cyklowania akcji jeśli nie istnieje
+            if not hasattr(self, 'api_action_states'):
+                self.api_action_states = [0] * len(self.api_names)  # 0, 1, 2 dla trzech akcji
+
+            # Cykluj do następnej akcji
+            self.api_action_states[api_index] = (self.api_action_states[api_index] + 1) % 3
+
+            # Określ akcję na podstawie stanu
+            if self.api_action_states[api_index] == 0:
+                action_type = "professional"
                 action_name = "profesjonalizacji"
-            elif selected_value == "🇺🇸 Na angielski":
-                action_type = "translate_to_en"
-                system_prompt = "Przetłumacz ten tekst na język angielski, zachowując jego znaczenie i ton."
+                icon = "✨"
+            elif self.api_action_states[api_index] == 1:
+                action_type = "translate_en"
                 action_name = "tłumaczenia na angielski"
-            elif selected_value == "🇵🇱 Na polski":
-                action_type = "translate_to_pl"
-                system_prompt = "Przetłumacz ten tekst na język polski, zachowując jego znaczenie i ton."
+                icon = "🇺🇸"
+            else:  # state == 2
+                action_type = "translate_pl"
                 action_name = "tłumaczenia na polski"
-            else:
-                return
+                icon = "🇵🇱"
+
+            # Zaktualizuj ikonę przycisku
+            self.api_action_buttons[api_index].configure(text=icon)
 
             # Uruchom ponowne przetwarzanie dla danego panelu
-            self.reprocess_single_panel(api_index, current_text, system_prompt, action_name)
+            self.reprocess_single_panel(api_index, current_text, action_type, action_name)
 
         except Exception as e:
-            error_context = f"api_index={api_index}, selected_value='{selected_value}'"
-            self.log_message(f"Błąd podczas obsługi akcji menu ({error_context}): {e}")
-            print(f"ERROR: handle_action_menu ({error_context}): {e}")
+            error_context = f"api_index={api_index}"
+            self.log_message(f"Błąd podczas cyklowania akcji ({error_context}): {e}")
+            print(f"ERROR: cycle_action_for_panel ({error_context}): {e}")
 
-    def reprocess_single_panel(self, api_index, text, system_prompt, action_name):
+    def reprocess_single_panel(self, api_index, text, action_type, action_name):
         """Ponownie przetwarza tekst dla konkretnego panelu z niestandardowym promptem"""
         try:
             api_name = self.api_names[api_index]
+
+            # Anuluj poprzedni wątek akcji jeśli istnieje
+            if api_index in self.api_action_threads:
+                self.api_action_cancel_flags[api_index] = True
+                if self.api_action_threads[api_index].is_alive():
+                    self.log_message(f"Anulowanie poprzedniej akcji dla {api_name}")
+
+            # Ustaw flagę anulowania na False dla nowej akcji
+            self.api_action_cancel_flags[api_index] = False
 
             # Wyczyść poprzedni wynik
             if api_index in self.api_results:
@@ -1830,40 +1850,45 @@ class MultiAPICorrector(ctk.CTk):
             # Uruchom żądanie API w osobnym wątku
             def run_api_request():
                 try:
-                    # Sprawdź który API i uruchom odpowiednią funkcję
-                    result = None
-                    if api_name == "OpenAI":
-                        result = openai_client.correct_text_openai(
-                            self.api_keys.get("OpenAI", ""),
-                            self.current_models.get("OpenAI", "gpt-4o-mini"),
-                            text,
-                            "custom",
-                            system_prompt
-                        )
-                    elif api_name == "Anthropic":
-                        result = anthropic_client.correct_text_anthropic(
-                            self.api_keys.get("Anthropic", ""),
-                            self.current_models.get("Anthropic", "claude-3-5-sonnet-20241022"),
-                            text,
-                            "custom",
-                            system_prompt
-                        )
-                    elif api_name == "Gemini":
-                        result = gemini_client.correct_text_gemini(
-                            self.api_keys.get("Gemini", ""),
-                            self.current_models.get("Gemini", "gemini-1.5-flash"),
-                            text,
-                            "custom",
-                            system_prompt
-                        )
-                    elif api_name == "DeepSeek":
-                        result = deepseek_client.correct_text_deepseek(
-                            self.api_keys.get("DeepSeek", ""),
-                            self.current_models.get("DeepSeek", "deepseek-chat"),
-                            text,
-                            "custom",
-                            system_prompt
-                        )
+                    # Sprawdź flagę anulowania na początku
+                    if self.api_action_cancel_flags.get(api_index, False):
+                        self.log_message(f"Anulowano akcję dla {api_name} przed rozpoczęciem")
+                        return
+
+                    # Pobierz prompty na podstawie typu akcji
+                    instruction_prompt = get_instruction_prompt(action_type)
+                    system_prompt = get_system_prompt(action_type)
+
+                    # Sprawdź flagę anulowania ponownie
+                    if self.api_action_cancel_flags.get(api_index, False):
+                        self.log_message(f"Anulowano akcję dla {api_name} po pobraniu promptów")
+                        return
+
+                    # Mapowanie API do funkcji (tak jak w oryginalnym kodzie)
+                    api_functions = {
+                        "OpenAI": openai_client.correct_text_openai,
+                        "Anthropic": anthropic_client.correct_text_anthropic,
+                        "Gemini": gemini_client.correct_text_gemini,
+                        "DeepSeek": deepseek_client.correct_text_deepseek
+                    }
+
+                    api_func = api_functions.get(api_name)
+                    if not api_func:
+                        raise ValueError(f"Nieznany dostawca API: {api_name}")
+
+                    # Wywołaj API function z parametrami jak w oryginalnym kodzie
+                    result = api_func(
+                        self.api_keys.get(api_name, ""),
+                        self.models.get(api_name, ""),
+                        text,
+                        instruction_prompt,
+                        system_prompt
+                    )
+
+                    # Sprawdź flagę anulowania po otrzymaniu wyniku
+                    if self.api_action_cancel_flags.get(api_index, False):
+                        self.log_message(f"Anulowano akcję dla {api_name} po otrzymaniu wyniku")
+                        return
 
                     # Zaktualizuj GUI w głównym wątku
                     if result:
@@ -1872,10 +1897,13 @@ class MultiAPICorrector(ctk.CTk):
                         self.root.after(0, lambda: self.handle_single_api_error(api_index, f"Brak odpowiedzi z {api_name}", action_name))
 
                 except Exception as e:
-                    self.root.after(0, lambda: self.handle_single_api_error(api_index, str(e), action_name))
+                    # Sprawdź czy to nie było anulowanie
+                    if not self.api_action_cancel_flags.get(api_index, False):
+                        self.root.after(0, lambda: self.handle_single_api_error(api_index, str(e), action_name))
 
             # Uruchom w osobnym wątku
             thread = threading.Thread(target=run_api_request, daemon=True)
+            self.api_action_threads[api_index] = thread
             thread.start()
 
         except Exception as e:
