@@ -900,9 +900,7 @@ class MultiAPICorrector(ctk.CTk):
                 values=["⚙️", "✨ Profesjonalizuj", "🇺🇸 Na angielski", "🇵🇱 Na polski"],
                 width=25,
                 height=25,
-                fg_color="transparent",
-                button_color="transparent",
-                button_hover_color=color,
+                fg_color=color,
                 text_color="white",
                 command=lambda value, idx=i: self.handle_action_dropdown(idx, value)
             )
@@ -1848,6 +1846,8 @@ class MultiAPICorrector(ctk.CTk):
             # Uruchom żądanie API w osobnym wątku
             def run_api_request():
                 try:
+                    self.log_message(f"🔍 DEBUG: Rozpoczynam custom API request dla {api_name}, action: {action_type}")
+
                     # Sprawdź flagę anulowania na początku
                     if self.api_action_cancel_flags.get(api_index, False):
                         self.log_message(f"Anulowano akcję dla {api_name} przed rozpoczęciem")
@@ -1856,6 +1856,8 @@ class MultiAPICorrector(ctk.CTk):
                     # Pobierz prompty na podstawie typu akcji
                     instruction_prompt = get_instruction_prompt(action_type)
                     system_prompt = get_system_prompt(action_type)
+
+                    self.log_message(f"🔍 DEBUG: Prompty pobrane - instruction: {instruction_prompt[:50]}..., system: {system_prompt[:50]}...")
 
                     # Sprawdź flagę anulowania ponownie
                     if self.api_action_cancel_flags.get(api_index, False):
@@ -1874,14 +1876,21 @@ class MultiAPICorrector(ctk.CTk):
                     if not api_func:
                         raise ValueError(f"Nieznany dostawca API: {api_name}")
 
+                    api_key = self.api_keys.get(api_name, "")
+                    model = self.models.get(api_name, "")
+
+                    self.log_message(f"🔍 DEBUG: Wywołuję {api_name} API - key: {'***' if api_key else 'BRAK'}, model: {model}")
+
                     # Wywołaj API function z parametrami jak w oryginalnym kodzie
                     result = api_func(
-                        self.api_keys.get(api_name, ""),
-                        self.models.get(api_name, ""),
+                        api_key,
+                        model,
                         text,
                         instruction_prompt,
                         system_prompt
                     )
+
+                    self.log_message(f"🔍 DEBUG: {api_name} API zwróciło: {type(result)} - {str(result)[:100] if result else 'None'}...")
 
                     # Sprawdź flagę anulowania po otrzymaniu wyniku
                     if self.api_action_cancel_flags.get(api_index, False):
@@ -1895,6 +1904,7 @@ class MultiAPICorrector(ctk.CTk):
                         self.root.after(0, lambda: self.handle_single_api_error(api_index, f"Brak odpowiedzi z {api_name}", action_name))
 
                 except Exception as e:
+                    self.log_message(f"🔍 DEBUG: Błąd w {api_name} API: {e}")
                     # Sprawdź czy to nie było anulowanie
                     if not self.api_action_cancel_flags.get(api_index, False):
                         self.root.after(0, lambda: self.handle_single_api_error(api_index, str(e), action_name))
