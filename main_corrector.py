@@ -1404,46 +1404,84 @@ class SettingsWindow(ctk.CTkToplevel):
         self.title("Ustawienia API")
         
         parent.update_idletasks()
-        parent_width = max(parent.winfo_width(), 900)
-        parent_height = max(parent.winfo_height(), 700)
+        self._parent_width = max(parent.winfo_width(), 900)
+        self._parent_height = max(parent.winfo_height(), 700)
+        self._parent_x = getattr(parent, "winfo_rootx", parent.winfo_x)()
+        self._parent_y = getattr(parent, "winfo_rooty", parent.winfo_y)()
+        self._screen_width = self.winfo_screenwidth()
+        self._screen_height = self.winfo_screenheight()
+        self._horizontal_margin = 80
+        self._vertical_margin = 100
+        self._usable_width = max(400, self._screen_width - self._horizontal_margin)
+        self._usable_height = max(400, self._screen_height - self._vertical_margin)
+
         scale = getattr(parent, "scale_factor", 1.0) or 1.0
-        settings_width = max(int(520 * scale), int(parent_width * 0.45))
-        settings_height = max(int(520 * scale), int(parent_height * 0.75))
+        initial_width = max(int(520 * scale), int(self._parent_width * 0.45))
+        initial_height = max(int(520 * scale), int(self._parent_height * 0.75))
+        initial_width = min(initial_width, self._usable_width)
+        initial_height = min(initial_height, self._usable_height)
 
-        screen_width = self.winfo_screenwidth()
-        screen_height = self.winfo_screenheight()
-        usable_width = max(400, screen_width - 80)
-        usable_height = max(400, screen_height - 160)
-        settings_width = min(settings_width, usable_width)
-        settings_height = min(settings_height, usable_height)
-
-        # Wyśrodkuj względem rodzica i upewnij się, że okno mieści się na ekranie
-        parent_x = parent.winfo_x()
-        parent_y = parent.winfo_y()
-        x = parent_x + (parent_width - settings_width) // 2
-        y = parent_y + (parent_height - settings_height) // 2
-        max_x = max(0, screen_width - settings_width)
-        max_y = max(0, screen_height - settings_height)
-        x = max(0, min(x, max_x))
-        y = max(0, min(y, max_y))
-
-        self.geometry(f"{settings_width}x{settings_height}+{int(x)}+{int(y)}")
-        self.minsize(350, 450)  # Minimalny rozmiar
+        self._apply_geometry(initial_width, initial_height)
+        self.minsize(350, min(450, self._usable_height))  # Minimalny rozmiar
         self.resizable(True, True)  # Umożliw zmianę rozmiaru
         
         self.transient(parent)
         self.setup_ui()
         self.load_settings()
-    
+        self._resize_to_fit_content()
+
+    def _apply_geometry(self, width, height):
+        """Ustawia geometrię okna w granicach ekranu i zapamiętuje bieżący rozmiar."""
+        width = int(max(1, width))
+        height = int(max(1, height))
+
+        x = self._parent_x + (self._parent_width - width) // 2
+        y = self._parent_y + (self._parent_height - height) // 2
+        max_x = max(0, self._screen_width - width)
+        max_y = max(0, self._screen_height - height)
+        x = max(0, min(x, max_x))
+        y = max(0, min(y, max_y))
+
+        self.geometry(f"{width}x{height}+{int(x)}+{int(y)}")
+        self._current_width = width
+        self._current_height = height
+
+    def _resize_to_fit_content(self):
+        """Rozszerza okno tak, aby cała zawartość mieściła się bez przewijania, jeśli pozwala na to ekran."""
+        if not hasattr(self, "main_frame"):
+            return
+
+        try:
+            content_widget = self.main_frame._scrollable_frame
+        except AttributeError:
+            content_widget = self.main_frame
+
+        self.update_idletasks()
+        content_width = content_widget.winfo_reqwidth()
+        content_height = content_widget.winfo_reqheight()
+
+        padding_x = 40
+        padding_y = 60
+
+        desired_width = min(max(self._current_width, content_width + padding_x), self._usable_width)
+        desired_height = min(max(self._current_height, content_height + padding_y), self._usable_height)
+
+        if desired_width != self._current_width or desired_height != self._current_height:
+            self._apply_geometry(desired_width, desired_height)
+
+        min_width = min(max(350, content_width + padding_x), self._usable_width)
+        min_height = min(max(450, content_height + padding_y), self._usable_height)
+        self.minsize(int(min_width), int(min_height))
+
     def setup_ui(self):
         """Konfiguruje interfejs ustawień."""
-        main_frame = ctk.CTkScrollableFrame(self)
-        main_frame.pack(fill="both", expand=True, padx=20, pady=20)
+        self.main_frame = ctk.CTkScrollableFrame(self)
+        self.main_frame.pack(fill="both", expand=True, padx=20, pady=20)
         
         # Skalowana czcionka tytułu
         title_font_size = max(16, int(18 * self.parent.scale_factor))
         title_label = ctk.CTkLabel(
-            main_frame, 
+            self.main_frame,
             text="Konfiguracja kluczy API",
             font=ctk.CTkFont(size=title_font_size, weight="bold")
         )
@@ -1464,7 +1502,7 @@ class SettingsWindow(ctk.CTkToplevel):
         ]
         
         for api_key, label, placeholder, color in apis:
-            frame = ctk.CTkFrame(main_frame, fg_color=color, corner_radius=10)
+            frame = ctk.CTkFrame(self.main_frame, fg_color=color, corner_radius=10)
             frame.pack(fill="x", pady=10)
             
             # Skalowana czcionka dla label
@@ -1542,7 +1580,7 @@ class SettingsWindow(ctk.CTkToplevel):
             model_input.pack(fill="x", pady=(5, 0))
             self.model_inputs[api_key] = model_input
 
-        general_frame = ctk.CTkFrame(main_frame, fg_color="#1f2937", corner_radius=10)
+        general_frame = ctk.CTkFrame(self.main_frame, fg_color="#1f2937", corner_radius=10)
         general_frame.pack(fill="x", pady=(10, 10))
 
         ctk.CTkLabel(
@@ -1562,7 +1600,7 @@ class SettingsWindow(ctk.CTkToplevel):
         self.highlight_checkbox.pack(anchor="w", padx=15, pady=(0, 12))
 
         # AI Settings section for GPT-5 models
-        ai_settings_frame = ctk.CTkFrame(main_frame, fg_color="#6366f1", corner_radius=10)
+        ai_settings_frame = ctk.CTkFrame(self.main_frame, fg_color="#6366f1", corner_radius=10)
         ai_settings_frame.pack(fill="x", pady=(20, 10))
         
         # Title for AI settings
@@ -1650,7 +1688,7 @@ class SettingsWindow(ctk.CTkToplevel):
         verbosity_help.pack(side="left")
         
         # Buttons
-        button_frame = ctk.CTkFrame(main_frame)
+        button_frame = ctk.CTkFrame(self.main_frame)
         button_frame.pack(fill="x", pady=20)
         
         save_button = ctk.CTkButton(
