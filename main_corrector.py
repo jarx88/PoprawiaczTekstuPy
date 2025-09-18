@@ -1109,6 +1109,16 @@ class MultiAPICorrector(ctk.CTk):
         self.status_label.configure(text=message)
         self.update_idletasks()
     
+    def log_message(self, message: str) -> None:
+        """Lekki logger UI-safe używany przez akcje (fallback do logging)."""
+        try:
+            logging.info(message)
+        except Exception:
+            try:
+                print(message)
+            except Exception:
+                pass
+
     def handle_hotkey_event(self):
         """Obsługuje Ctrl+Shift+C - NAJPIERW kopiuje tekst, POTEM pokazuje GUI."""
         try:
@@ -1709,7 +1719,7 @@ class MultiAPICorrector(ctk.CTk):
             logging.info(f"Anulowanie custom akcji dla API {idx}")
 
             # Zaktualizuj GUI dla anulowanej custom akcji
-            self.root.after(0, lambda: self.handle_single_api_error(idx, "Anulowano przez użytkownika", "akcji"))
+            self.after(0, lambda: self.handle_single_api_error(idx, "Anulowano przez użytkownika", "akcji"))
     
     
     def cancel_all_processing(self):
@@ -1906,15 +1916,15 @@ class MultiAPICorrector(ctk.CTk):
 
                     # Zaktualizuj GUI w głównym wątku
                     if result:
-                        self.root.after(0, lambda: self.handle_single_api_result(api_index, result, action_name))
+                        self.after(0, lambda: self.handle_single_api_result(api_index, result, action_name))
                     else:
-                        self.root.after(0, lambda: self.handle_single_api_error(api_index, f"Brak odpowiedzi z {api_name}", action_name))
+                        self.after(0, lambda: self.handle_single_api_error(api_index, f"Brak odpowiedzi z {api_name}", action_name))
 
                 except Exception as e:
                     self.log_message(f"🔍 DEBUG: Błąd w {api_name} API: {e}")
                     # Sprawdź czy to nie było anulowanie
                     if not self.api_action_cancel_flags.get(api_index, False):
-                        self.root.after(0, lambda: self.handle_single_api_error(api_index, str(e), action_name))
+                        self.after(0, lambda: self.handle_single_api_error(api_index, str(e), action_name))
 
             # Uruchom w osobnym wątku
             thread = threading.Thread(target=run_api_request, daemon=True)
