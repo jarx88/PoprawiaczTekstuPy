@@ -1801,6 +1801,23 @@ class MultiAPICorrector(ctk.CTk):
             import tkinter as tk
             menu = tk.Menu(self, tearoff=0)
 
+            # Ustaw większą czcionkę dla menu (skalowanie HiDPI)
+            try:
+                import tkinter.font as tkfont
+                menu_font_size = max(12, int(14 * (getattr(self, "scale_factor", 1.0) or 1.0)))
+                try:
+                    menu_font = tkfont.Font(family="Segoe UI", size=menu_font_size)
+                except Exception:
+                    # Fallback do domyślnej czcionki Tk, jeśli brak Segoe UI
+                    menu_font = tkfont.nametofont("TkDefaultFont")
+                    menu_font.configure(size=menu_font_size)
+                try:
+                    menu.configure(font=menu_font)
+                except Exception:
+                    pass
+            except Exception:
+                pass
+
             # Dodaj opcje do menu
             menu.add_command(
                 label="✨ Zmień na profesjonalny ton",

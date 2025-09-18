@@ -1,8 +1,14 @@
 import configparser
 import os
-import winreg
-import ctypes
 import sys
+
+# Windows-specific imports
+if sys.platform == "win32":
+    import winreg
+    import ctypes
+else:
+    winreg = None
+    ctypes = None
 from pathlib import Path
 from .paths import get_config_file_path
 from .logger import logger
@@ -235,23 +241,26 @@ def save_config(api_keys, models, settings=None, ai_settings=None):
 
 def is_in_startup():
     """Sprawdza czy aplikacja jest w autostarcie."""
+    if sys.platform != "win32":
+        return False
+
     try:
         # Ścieżka do programu
         if getattr(sys, 'frozen', False):
             app_path = sys.executable
         else:
             app_path = sys.argv[0]
-        
+
         # Nazwa skrótu w autostarcie
         shortcut_name = "PoprawTekst"
-        
+
         # Klucz rejestru autostartu
         key = winreg.HKEY_CURRENT_USER
         key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
-        
+
         # Otwórz klucz
         registry_key = winreg.OpenKey(key, key_path, 0, winreg.KEY_READ)
-        
+
         try:
             # Spróbuj odczytać wartość
             value, regtype = winreg.QueryValueEx(registry_key, shortcut_name)
@@ -268,27 +277,30 @@ def is_in_startup():
 
 def add_to_startup():
     """Dodaje aplikację do autostartu."""
+    if sys.platform != "win32":
+        return False
+
     try:
         # Ścieżka do programu
         if getattr(sys, 'frozen', False):
             app_path = sys.executable
         else:
             app_path = sys.argv[0]
-        
+
         # Nazwa skrótu w autostarcie
         shortcut_name = "PoprawTekst"
-        
+
         # Klucz rejestru autostartu
         key = winreg.HKEY_CURRENT_USER
         key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
-        
+
         # Otwórz klucz z prawem zapisu
         registry_key = winreg.OpenKey(key, key_path, 0, winreg.KEY_WRITE)
-        
+
         # Zapisz wartość
         winreg.SetValueEx(registry_key, shortcut_name, 0, winreg.REG_SZ, f'"{app_path}"')
         winreg.CloseKey(registry_key)
-        
+
         return True
     except Exception as e:
         print(f"Błąd podczas dodawania do autostartu: {e}")
@@ -296,21 +308,24 @@ def add_to_startup():
 
 def remove_from_startup():
     """Usuwa aplikację z autostartu."""
+    if sys.platform != "win32":
+        return False
+
     try:
         # Nazwa skrótu w autostarcie
         shortcut_name = "PoprawTekst"
-        
+
         # Klucz rejestru autostartu
         key = winreg.HKEY_CURRENT_USER
         key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
-        
+
         # Otwórz klucz z prawem zapisu
         registry_key = winreg.OpenKey(key, key_path, 0, winreg.KEY_WRITE)
-        
+
         # Usuń wartość
         winreg.DeleteValue(registry_key, shortcut_name)
         winreg.CloseKey(registry_key)
-        
+
         return True
     except WindowsError:
         # Wartość już nie istnieje
@@ -321,6 +336,9 @@ def remove_from_startup():
 
 def is_admin():
     """Sprawdza czy program jest uruchomiony z prawami administratora."""
+    if sys.platform != "win32":
+        return False
+
     try:
         return ctypes.windll.shell32.IsUserAnAdmin() != 0
     except:
