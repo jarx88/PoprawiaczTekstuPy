@@ -894,18 +894,18 @@ class MultiAPICorrector(ctk.CTk):
             cancel_btn.configure(state="disabled")
             self.api_cancel_buttons.append(cancel_btn)
 
-            # Action button (dropdown menu) - po lewej od X
-            action_button = ctk.CTkOptionMenu(
+            # Action button (looks like icon but works as dropdown) - po lewej od X
+            action_button = ctk.CTkButton(
                 header_content,
-                values=["⚙️", "✨ Profesjonalizuj", "🇺🇸 Na angielski", "🇵🇱 Na polski"],
+                text="⚙️",
                 width=25,
                 height=25,
-                fg_color=color,
+                fg_color="transparent",
+                hover_color=color,
                 text_color="white",
-                command=lambda value, idx=i: self.handle_action_dropdown(idx, value)
+                command=lambda idx=i: self.show_action_menu(idx)
             )
             action_button.pack(side="right", padx=2)
-            action_button.set("⚙️")  # Default value
             self.api_action_buttons.append(action_button)
             
             # Progress bar
@@ -1761,19 +1761,14 @@ class MultiAPICorrector(ctk.CTk):
         self.progress_label.configure(text="")
         self.api_counter_label.configure(text="🤖 API: 0/4")
 
-    def handle_action_dropdown(self, api_index, selected_value):
-        """Obsługuje wybór z dropdown menu akcji"""
+    def show_action_menu(self, api_index):
+        """Pokazuje menu akcji dla danego panelu"""
         try:
+            self.log_message(f"🔍 DEBUG: Kliknięto ikonkę akcji dla panelu {api_index} ({self.api_names[api_index]})")
+
             # Walidacja indeksu
             if not (0 <= api_index < len(self.api_action_buttons)):
                 self.log_message(f"Nieprawidłowy indeks API: {api_index}")
-                return
-
-            # Reset menu do domyślnej wartości
-            self.api_action_buttons[api_index].set("⚙️")
-
-            # Sprawdź czy to pierwsza opcja (która jest tylko etykietą)
-            if selected_value == "⚙️":
                 return
 
             # Sprawdź czy mamy wynik w tym panelu
@@ -1786,26 +1781,43 @@ class MultiAPICorrector(ctk.CTk):
                 self.log_message(f"Brak tekstu w panelu {self.api_names[api_index]} do przetworzenia")
                 return
 
-            # Określ akcję na podstawie wyboru
-            if selected_value == "✨ Profesjonalizuj":
-                action_type = "professional"
-                action_name = "profesjonalizacji"
-            elif selected_value == "🇺🇸 Na angielski":
-                action_type = "translate_en"
-                action_name = "tłumaczenia na angielski"
-            elif selected_value == "🇵🇱 Na polski":
-                action_type = "translate_pl"
-                action_name = "tłumaczenia na polski"
-            else:
-                return
+            # Utwórz popup menu
+            menu = tk.Menu(self, tearoff=0)
+            menu.add_command(
+                label="✨ Profesjonalizuj",
+                command=lambda: self.execute_action(api_index, "professional", "profesjonalizacji")
+            )
+            menu.add_command(
+                label="🇺🇸 Na angielski",
+                command=lambda: self.execute_action(api_index, "translate_en", "tłumaczenia na angielski")
+            )
+            menu.add_command(
+                label="🇵🇱 Na polski",
+                command=lambda: self.execute_action(api_index, "translate_pl", "tłumaczenia na polski")
+            )
 
+            # Pokaż menu przy pozycji przycisku
+            button = self.api_action_buttons[api_index]
+            x = button.winfo_rootx()
+            y = button.winfo_rooty() + button.winfo_height()
+            menu.post(x, y)
+
+        except Exception as e:
+            self.log_message(f"🔍 DEBUG: Błąd podczas pokazywania menu akcji: {e}")
+            print(f"ERROR: show_action_menu: {e}")
+
+    def execute_action(self, api_index, action_type, action_name):
+        """Wykonuje wybraną akcję"""
+        try:
+            self.log_message(f"🔍 DEBUG: Wykonuję akcję {action_type} dla panelu {api_index}")
+
+            current_text = self.api_results[api_index].strip()
             # Uruchom ponowne przetwarzanie dla danego panelu
             self.reprocess_single_panel(api_index, current_text, action_type, action_name)
 
         except Exception as e:
-            error_context = f"api_index={api_index}, selected_value='{selected_value}'"
-            self.log_message(f"Błąd podczas obsługi dropdown akcji ({error_context}): {e}")
-            print(f"ERROR: handle_action_dropdown ({error_context}): {e}")
+            self.log_message(f"🔍 DEBUG: Błąd podczas wykonywania akcji: {e}")
+            print(f"ERROR: execute_action: {e}")
 
     def reprocess_single_panel(self, api_index, text, action_type, action_name):
         """Ponownie przetwarza tekst dla konkretnego panelu z niestandardowym promptem"""
