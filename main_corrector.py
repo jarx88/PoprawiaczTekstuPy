@@ -35,6 +35,174 @@ from utils.build_info import get_app_version
 main_app = None
 tray_icon = None
 
+
+def _safe_update_idletasks(widget):
+    """Safely update idle tasks for a widget, ignoring errors."""
+    if widget is None:
+        return
+    try:
+        widget.update_idletasks()
+    except Exception:
+        pass
+
+
+def _get_display_bounds(widget):
+    """Return the usable display bounds (left, top, right, bottom) for a widget."""
+    if widget is None:
+        return 0, 0, 0, 0
+
+    _safe_update_idletasks(widget)
+
+    # Start with Tk's notion of the virtual root to cover multi-monitor setups
+    try:
+        left = int(widget.winfo_vrootx())
+        top = int(widget.winfo_vrooty())
+        width = int(widget.winfo_vrootwidth())
+        height = int(widget.winfo_vrootheight())
+        if width <= 0 or height <= 0:
+            raise ValueError
+        right = left + width
+        bottom = top + height
+    except Exception:
+        screen_width = int(widget.winfo_screenwidth())
+        screen_height = int(widget.winfo_screenheight())
+        left, top = 0, 0
+        right = left + max(1, screen_width)
+        bottom = top + max(1, screen_height)
+
+    # On Windows try to detect the monitor that hosts the widget and use its work area
+    if sys.platform.startswith("win"):
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            user32 = ctypes.windll.user32
+            MONITOR_DEFAULTTONEAREST = 2
+            hwnd = widget.winfo_id()
+            monitor = user32.MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST)
+
+            class RECT(ctypes.Structure):
+                _fields_ = [
+                    ("left", wintypes.LONG),
+                    ("top", wintypes.LONG),
+                    ("right", wintypes.LONG),
+                    ("bottom", wintypes.LONG),
+                ]
+
+            class MONITORINFO(ctypes.Structure):
+                _fields_ = [
+                    ("cbSize", wintypes.DWORD),
+                    ("rcMonitor", RECT),
+                    ("rcWork", RECT),
+                    ("dwFlags", wintypes.DWORD),
+                ]
+
+            info = MONITORINFO()
+            info.cbSize = ctypes.sizeof(MONITORINFO)
+            if monitor and user32.GetMonitorInfoW(monitor, ctypes.byref(info)):
+                work = info.rcWork
+                left = int(work.left)
+                top = int(work.top)
+                right = int(work.right)
+                bottom = int(work.bottom)
+        except Exception:
+            pass
+
+    if right <= left:
+        right = left + max(1, int(widget.winfo_screenwidth()))
+    if bottom <= top:
+        bottom = top + max(1, int(widget.winfo_screenheight()))
+
+    return left, top, right, bottom
+
+
+def _get_widget_root_geometry(widget, fallback):
+    """Return (x, y, width, height) for the widget or fall back to defaults."""
+    if widget is None:
+        return fallback
+
+    _safe_update_idletasks(widget)
+    try:
+        width = int(widget.winfo_width())
+        height = int(widget.winfo_height())
+        x = int(widget.winfo_rootx())
+        y = int(widget.winfo_rooty())
+        if width <= 1 or height <= 1:
+            raise ValueError
+        return x, y, width, height
+    except Exception:
+        return fallback
+
+
+def _compute_child_geometry(reference_widget, desired_width, desired_height, min_width=320, min_height=240):
+    """Compute a geometry tuple constrained to the monitor of the reference widget."""
+    if reference_widget is None:
+        raise ValueError("reference_widget cannot be None")
+
+    min_width = max(1, int(min_width))
+    min_height = max(1, int(min_height))
+
+    left, top, right, bottom = _get_display_bounds(reference_widget)
+    area_width = max(1, right - left)
+    area_height = max(1, bottom - top)
+
+    desired_width = int(desired_width)
+    desired_height = int(desired_height)
+
+    width = int(min(area_width, max(min_width, desired_width)))
+    height = int(min(area_height, max(min_height, desired_height)))
+
+    fallback = (left, top, area_width, area_height)
+    ref_x, ref_y, ref_width, ref_height = _get_widget_root_geometry(reference_widget, fallback)
+    if ref_width <= 1 or ref_height <= 1:
+        ref_width, ref_height = width, height
+
+    x = ref_x + (ref_width - width) // 2
+    y = ref_y + (ref_height - height) // 2
+
+    x = max(left, min(x, right - width))
+    y = max(top, min(y, bottom - height))
+
+    return width, height, x, y, area_width, area_height
+
+
+def _enforce_window_display_bounds(window, reference_widget, min_width=200, min_height=200):
+    """Ensure the window stays fully visible within the reference widget's monitor."""
+    if window is None or reference_widget is None:
+        return
+    try:
+        if not window.winfo_exists():
+            return
+    except Exception:
+        return
+
+    _safe_update_idletasks(window)
+    current_width = max(min_width, int(window.winfo_width()))
+    current_height = max(min_height, int(window.winfo_height()))
+
+    width, height, x, y, area_width, area_height = _compute_child_geometry(
+        reference_widget,
+        current_width,
+        current_height,
+        min_width,
+        min_height,
+    )
+
+    geometry_changed = (
+        int(window.winfo_width()) != width
+        or int(window.winfo_height()) != height
+        or int(window.winfo_rootx()) != x
+        or int(window.winfo_rooty()) != y
+    )
+
+    if geometry_changed:
+        window.geometry(f"{width}x{height}+{x}+{y}")
+
+    window.minsize(int(min(min_width, area_width)), int(min(min_height, area_height)))
+    window.maxsize(int(area_width), int(area_height))
+
+    return area_width, area_height
+
 def get_assets_dir_path():
     """Zwraca ścieżkę do katalogu assets."""
     if getattr(sys, 'frozen', False):
@@ -387,11 +555,20 @@ class MultiAPICorrector(ctk.CTk):
             )
             return
 
+        min_width = 360
+        min_height = 280
+
         if self.original_text_window and self.original_text_window.winfo_exists():
             try:
                 self.original_text_window.deiconify()
                 self.original_text_window.lift()
                 self.original_text_window.focus_force()
+                _enforce_window_display_bounds(
+                    self.original_text_window,
+                    self,
+                    min_width,
+                    min_height,
+                )
             except Exception:
                 pass
             self._update_original_text_view()
@@ -400,22 +577,18 @@ class MultiAPICorrector(ctk.CTk):
         window = ctk.CTkToplevel(self)
         window.title("Oryginalny tekst")
         window.transient(self)
-        window.minsize(500, 400)
-
-        self.update_idletasks()
-        parent_width = max(self.winfo_width(), window.winfo_reqwidth())
-        parent_height = max(self.winfo_height(), window.winfo_reqheight())
-        width = max(500, int(parent_width * 0.6))
-        height = max(400, int(parent_height * 0.6))
-        screen_w = self.winfo_screenwidth()
-        screen_h = self.winfo_screenheight()
-        width = min(width, screen_w - 40)
-        height = min(height, screen_h - 80)
-        parent_x = self.winfo_rootx()
-        parent_y = self.winfo_rooty()
-        x = parent_x + max(0, (parent_width - width) // 2)
-        y = parent_y + max(0, (parent_height - height) // 2)
+        desired_width = max(min_width, int(self.winfo_width() * 0.55))
+        desired_height = max(min_height, int(self.winfo_height() * 0.65))
+        width, height, x, y, area_width, area_height = _compute_child_geometry(
+            self,
+            desired_width,
+            desired_height,
+            min_width,
+            min_height,
+        )
         window.geometry(f"{width}x{height}+{x}+{y}")
+        window.minsize(int(min(min_width, area_width)), int(min(min_height, area_height)))
+        window.maxsize(int(area_width), int(area_height))
 
         window.protocol("WM_DELETE_WINDOW", self._close_original_text_window)
         window.bind("<Destroy>", self._on_original_window_destroy)
@@ -466,7 +639,8 @@ class MultiAPICorrector(ctk.CTk):
 
         self.original_text_window = window
         self.original_text_textbox = textbox
-    
+        window.after(150, lambda: _enforce_window_display_bounds(window, self, min_width, min_height))
+
     def rescale_ui_components(self):
         """Przeskalowuje komponenty UI na podstawie scale_factor."""
         # Przeskaluj czcionki
@@ -1578,49 +1752,68 @@ class SettingsWindow(ctk.CTkToplevel):
             logging.debug(f"Błąd ustawiania ikony okna Settings: {e}")
         
         self.title("Ustawienia API")
-        
-        parent.update_idletasks()
-        self._parent_width = max(parent.winfo_width(), 900)
-        self._parent_height = max(parent.winfo_height(), 700)
-        self._parent_x = getattr(parent, "winfo_rootx", parent.winfo_x)()
-        self._parent_y = getattr(parent, "winfo_rooty", parent.winfo_y)()
-        self._screen_width = self.winfo_screenwidth()
-        self._screen_height = self.winfo_screenheight()
-        self._horizontal_margin = 80
-        self._vertical_margin = 100
-        self._usable_width = max(400, self._screen_width - self._horizontal_margin)
-        self._usable_height = max(400, self._screen_height - self._vertical_margin)
+
+        self._reference_widget = parent if parent is not None else self
+        if parent is not None:
+            _safe_update_idletasks(parent)
 
         scale = getattr(parent, "scale_factor", 1.0) or 1.0
-        initial_width = max(int(520 * scale), int(self._parent_width * 0.45))
-        initial_height = max(int(520 * scale), int(self._parent_height * 0.75))
-        initial_width = min(initial_width, self._usable_width)
-        initial_height = min(initial_height, self._usable_height)
+        self._base_min_width = int(max(380, min(620, 420 * scale)))
+        self._base_min_height = int(max(460, min(720, 520 * scale)))
 
-        self._apply_geometry(initial_width, initial_height)
-        self.minsize(350, min(450, self._usable_height))  # Minimalny rozmiar
-        self.resizable(True, True)  # Umożliw zmianę rozmiaru
+        if parent is not None:
+            parent_width = max(int(parent.winfo_width()), self._base_min_width)
+            parent_height = max(int(parent.winfo_height()), self._base_min_height)
+        else:
+            parent_width = max(int(self.winfo_screenwidth() * 0.6), self._base_min_width)
+            parent_height = max(int(self.winfo_screenheight() * 0.6), self._base_min_height)
+
+        desired_width = max(self._base_min_width, int(parent_width * 0.55))
+        desired_height = max(self._base_min_height, int(parent_height * 0.75))
+
+        self._current_width = desired_width
+        self._current_height = desired_height
+        self._display_area = (0, 0)
+        self._min_width = self._base_min_width
+        self._min_height = self._base_min_height
+
+        self._apply_geometry(desired_width, desired_height)
+        enforced_area = _enforce_window_display_bounds(
+            self,
+            self._reference_widget,
+            self._min_width,
+            self._min_height,
+        )
+        if enforced_area:
+            self._display_area = enforced_area
+        self.resizable(True, True)
         
         self.transient(parent)
         self.setup_ui()
         self.load_settings()
         self._resize_to_fit_content()
 
-    def _apply_geometry(self, width, height):
+    def _apply_geometry(self, width, height, min_width=None, min_height=None):
         """Ustawia geometrię okna w granicach ekranu i zapamiętuje bieżący rozmiar."""
-        width = int(max(1, width))
-        height = int(max(1, height))
+        effective_min_width = int(min_width) if min_width is not None else self._base_min_width
+        effective_min_height = int(min_height) if min_height is not None else self._base_min_height
 
-        x = self._parent_x + (self._parent_width - width) // 2
-        y = self._parent_y + (self._parent_height - height) // 2
-        max_x = max(0, self._screen_width - width)
-        max_y = max(0, self._screen_height - height)
-        x = max(0, min(x, max_x))
-        y = max(0, min(y, max_y))
+        width, height, x, y, area_width, area_height = _compute_child_geometry(
+            self._reference_widget,
+            width,
+            height,
+            effective_min_width,
+            effective_min_height,
+        )
 
-        self.geometry(f"{width}x{height}+{int(x)}+{int(y)}")
+        self.geometry(f"{width}x{height}+{x}+{y}")
         self._current_width = width
         self._current_height = height
+        self._display_area = (area_width, area_height)
+        self._min_width = effective_min_width
+        self._min_height = effective_min_height
+        self.minsize(int(min(effective_min_width, area_width)), int(min(effective_min_height, area_height)))
+        self.maxsize(int(area_width), int(area_height))
 
     def _resize_to_fit_content(self):
         """Rozszerza okno tak, aby cała zawartość mieściła się bez przewijania, jeśli pozwala na to ekran."""
@@ -1639,15 +1832,13 @@ class SettingsWindow(ctk.CTkToplevel):
         padding_x = 40
         padding_y = 60
 
-        desired_width = min(max(self._current_width, content_width + padding_x), self._usable_width)
-        desired_height = min(max(self._current_height, content_height + padding_y), self._usable_height)
+        effective_min_width = max(self._base_min_width, content_width + padding_x)
+        effective_min_height = max(self._base_min_height, content_height + padding_y)
 
-        if desired_width != self._current_width or desired_height != self._current_height:
-            self._apply_geometry(desired_width, desired_height)
+        desired_width = max(self._current_width, effective_min_width)
+        desired_height = max(self._current_height, effective_min_height)
 
-        min_width = min(max(350, content_width + padding_x), self._usable_width)
-        min_height = min(max(450, content_height + padding_y), self._usable_height)
-        self.minsize(int(min_width), int(min_height))
+        self._apply_geometry(desired_width, desired_height, effective_min_width, effective_min_height)
 
     def setup_ui(self):
         """Konfiguruje interfejs ustawień."""
