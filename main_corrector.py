@@ -188,6 +188,8 @@ class MultiAPICorrector(ctk.CTk):
         self.api_threads = {}
         self.api_results = {}
         self.original_text = ""
+        self.original_text_window = None
+        self.original_text_textbox = None
         self.processing = False
         self.current_session_id = 0
         self.cancel_flags = {}  # Flagi anulowania dla każdego API
@@ -285,21 +287,185 @@ class MultiAPICorrector(ctk.CTk):
         # Sprawdź czy zmienił się monitor/rozdzielczość
         current_screen_width, current_screen_height = self.get_screen_dimensions()
         
-        if (current_screen_width != self.last_screen_width or 
+        if (current_screen_width != self.last_screen_width or
             current_screen_height != self.last_screen_height):
-            
+
             logging.info(f"Monitor change detected: {current_screen_width}x{current_screen_height}")
-            
+
             # Przeliczy skalowanie
             new_scale = self.calculate_scale_factor(current_screen_width, current_screen_height)
-            
+
             if abs(new_scale - self.scale_factor) > 0.1:  # Jeśli znacząca zmiana
                 self.scale_factor = new_scale
                 self.rescale_ui_components()
-            
+
             # Zaktualizuj zapisane wymiary
             self.last_screen_width = current_screen_width
             self.last_screen_height = current_screen_height
+
+    def _set_original_text(self, text: str) -> None:
+        """Aktualizuje przechowywany oryginalny tekst i widok podglądu."""
+        self.original_text = text or ""
+        self._update_original_text_view()
+        if hasattr(self, "original_text_button"):
+            try:
+                if self.original_text.strip():
+                    self.original_text_button.configure(state="normal")
+                else:
+                    self.original_text_button.configure(state="disabled")
+            except Exception:
+                pass
+
+    def _update_original_text_view(self) -> None:
+        """Odświeża zawartość okna z oryginalnym tekstem (jeśli jest otwarte)."""
+        if not self.original_text_window or not self.original_text_textbox:
+            return
+        try:
+            if not self.original_text_window.winfo_exists() or not self.original_text_textbox.winfo_exists():
+                return
+        except Exception:
+            return
+
+        textbox = self.original_text_textbox
+        try:
+            prev_state = textbox.cget("state")
+        except Exception:
+            prev_state = "normal"
+        if prev_state != "normal":
+            textbox.configure(state="normal")
+        textbox.delete("1.0", "end")
+        textbox.insert("1.0", self.original_text)
+        textbox.yview_moveto(0.0)
+        if prev_state != "normal":
+            textbox.configure(state=prev_state)
+
+    def _on_original_window_destroy(self, event) -> None:
+        """Czyści referencje po zamknięciu okna podglądu oryginalnego tekstu."""
+        if event.widget is self.original_text_window:
+            self.original_text_window = None
+            self.original_text_textbox = None
+
+    def _close_original_text_window(self) -> None:
+        """Zamyka okno z oryginalnym tekstem."""
+        if self.original_text_window and self.original_text_window.winfo_exists():
+            try:
+                self.original_text_window.destroy()
+            except Exception:
+                pass
+        self.original_text_window = None
+        self.original_text_textbox = None
+
+    def _copy_original_text_to_clipboard(self) -> None:
+        """Kopiuje oryginalny tekst do schowka użytkownika."""
+        if not self.original_text.strip():
+            messagebox.showinfo(
+                "Brak tekstu",
+                "Brak oryginalnego tekstu do skopiowania.",
+                parent=self
+            )
+            return
+        try:
+            self.clipboard_clear()
+            self.clipboard_append(self.original_text)
+            self.update()
+            self.update_status("📋 Skopiowano oryginalny tekst do schowka")
+        except Exception as exc:
+            logging.error(f"Nie można skopiować oryginalnego tekstu: {exc}")
+            messagebox.showerror(
+                "Błąd",
+                f"Nie można skopiować oryginalnego tekstu: {exc}",
+                parent=self
+            )
+
+    def show_original_text_window(self) -> None:
+        """Pokazuje okno z pełnym oryginalnym tekstem."""
+        if not self.original_text.strip():
+            messagebox.showinfo(
+                "Brak tekstu",
+                "Brak oryginalnego tekstu do wyświetlenia.",
+                parent=self
+            )
+            return
+
+        if self.original_text_window and self.original_text_window.winfo_exists():
+            try:
+                self.original_text_window.deiconify()
+                self.original_text_window.lift()
+                self.original_text_window.focus_force()
+            except Exception:
+                pass
+            self._update_original_text_view()
+            return
+
+        window = ctk.CTkToplevel(self)
+        window.title("Oryginalny tekst")
+        window.transient(self)
+        window.minsize(500, 400)
+
+        self.update_idletasks()
+        parent_width = max(self.winfo_width(), window.winfo_reqwidth())
+        parent_height = max(self.winfo_height(), window.winfo_reqheight())
+        width = max(500, int(parent_width * 0.6))
+        height = max(400, int(parent_height * 0.6))
+        screen_w = self.winfo_screenwidth()
+        screen_h = self.winfo_screenheight()
+        width = min(width, screen_w - 40)
+        height = min(height, screen_h - 80)
+        parent_x = self.winfo_rootx()
+        parent_y = self.winfo_rooty()
+        x = parent_x + max(0, (parent_width - width) // 2)
+        y = parent_y + max(0, (parent_height - height) // 2)
+        window.geometry(f"{width}x{height}+{x}+{y}")
+
+        window.protocol("WM_DELETE_WINDOW", self._close_original_text_window)
+        window.bind("<Destroy>", self._on_original_window_destroy)
+
+        text_container = ctk.CTkFrame(window, fg_color="transparent")
+        text_container.pack(fill="both", expand=True, padx=15, pady=(15, 10))
+
+        textbox = ctk.CTkTextbox(
+            text_container,
+            wrap="word",
+            font=ctk.CTkFont(size=13),
+            fg_color="white",
+            text_color="black"
+        )
+        textbox.pack(side="left", fill="both", expand=True)
+        textbox.insert("1.0", self.original_text)
+        textbox.configure(state="disabled")
+        textbox.configure(cursor="xterm")
+
+        scrollbar = ctk.CTkScrollbar(
+            text_container,
+            orientation="vertical",
+            command=textbox.yview
+        )
+        scrollbar.pack(side="right", fill="y", padx=(5, 0))
+        textbox.configure(yscrollcommand=scrollbar.set)
+
+        button_frame = ctk.CTkFrame(window, fg_color="transparent")
+        button_frame.pack(fill="x", padx=15, pady=(0, 15))
+
+        copy_button = ctk.CTkButton(
+            button_frame,
+            text="📋 Kopiuj",
+            command=self._copy_original_text_to_clipboard,
+            width=130,
+            height=36
+        )
+        copy_button.pack(side="right", padx=(10, 0))
+
+        close_button = ctk.CTkButton(
+            button_frame,
+            text="Zamknij",
+            command=self._close_original_text_window,
+            width=130,
+            height=36
+        )
+        close_button.pack(side="right")
+
+        self.original_text_window = window
+        self.original_text_textbox = textbox
     
     def rescale_ui_components(self):
         """Przeskalowuje komponenty UI na podstawie scale_factor."""
@@ -541,7 +707,17 @@ class MultiAPICorrector(ctk.CTk):
             height=40
         )
         self.settings_button.pack(side="left", padx=5)
-        
+
+        self.original_text_button = ctk.CTkButton(
+            control_frame,
+            text="📄 Oryginalny tekst",
+            command=self.show_original_text_window,
+            width=160,
+            height=40,
+            state="disabled"
+        )
+        self.original_text_button.pack(side="left", padx=5)
+
         self.paste_button = ctk.CTkButton(
             control_frame,
             text="📋 Wklej tekst",
@@ -657,7 +833,7 @@ class MultiAPICorrector(ctk.CTk):
             
             # SUCCESS: Mamy tekst! Pokaż GUI i rozpocznij przetwarzanie
             logging.info(f"✅ Clipboard copy SUCCESS - {len(clipboard_text)} znaków")
-            self.original_text = clipboard_text
+            self._set_original_text(clipboard_text)
             
             # DOPIERO TERAZ pokaż GUI - po udanym kopiowaniu!
             self._show_gui_and_process(clipboard_text)
@@ -714,7 +890,7 @@ class MultiAPICorrector(ctk.CTk):
         self.api_cancel_events = {}
         self.current_session_id += 1
         self._stream_started_indices.clear()
-        self.original_text = text
+        self._set_original_text(text)
 
         self.update_status(status_message)
         self.session_label.configure(text=f"📝 Sesja: {self.current_session_id}")
@@ -1361,7 +1537,7 @@ class MultiAPICorrector(ctk.CTk):
                 return
             
             logging.info(f"Przetwarzanie tekstu ze schowka: {len(clipboard_text)} znaków")
-            self.original_text = clipboard_text
+            self._set_original_text(clipboard_text)
             # Przygotuj stany loaderów zanim okno zostanie ponownie pokazane, aby uniknąć migotania.
             self._show_gui_and_process(clipboard_text)
             
