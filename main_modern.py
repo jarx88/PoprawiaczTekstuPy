@@ -47,6 +47,7 @@ class ModernTextCorrector(ctk.CTk):
         self.api_keys = {}
         self.models = {}
         self.settings = {}
+        self.ai_settings = {}
         
         # Interfejs
         self.setup_ui()
@@ -143,7 +144,13 @@ class ModernTextCorrector(ctk.CTk):
     def load_config(self):
         """Ładuje konfigurację API."""
         try:
-            self.api_keys, self.models, self.settings, _ = config_manager.load_config()
+            (
+                self.api_keys,
+                self.models,
+                self.settings,
+                self.ai_settings,
+                _,
+            ) = config_manager.load_config()
             
             if not any(self.api_keys.values()):
                 self.update_status("⚠️ Brak konfiguracji API - skonfiguruj w ustawieniach")

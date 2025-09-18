@@ -35,6 +35,255 @@ from utils.build_info import get_app_version
 main_app = None
 tray_icon = None
 
+
+def _safe_update_idletasks(widget):
+    """Safely update idle tasks for a widget, ignoring errors."""
+    if widget is None:
+        return
+    try:
+        widget.update_idletasks()
+    except Exception:
+        pass
+
+
+def _get_display_bounds(widget):
+    """Return the usable display bounds (left, top, right, bottom) for a widget."""
+    if widget is None:
+        return 0, 0, 0, 0
+
+    _safe_update_idletasks(widget)
+
+    # Start with Tk's notion of the virtual root to cover multi-monitor setups
+    try:
+        left = int(widget.winfo_vrootx())
+        top = int(widget.winfo_vrooty())
+        width = int(widget.winfo_vrootwidth())
+        height = int(widget.winfo_vrootheight())
+        if width <= 0 or height <= 0:
+            raise ValueError
+        right = left + width
+        bottom = top + height
+    except Exception:
+        screen_width = int(widget.winfo_screenwidth())
+        screen_height = int(widget.winfo_screenheight())
+        left, top = 0, 0
+        right = left + max(1, screen_width)
+        bottom = top + max(1, screen_height)
+
+    # On Windows try to detect the monitor that hosts the widget and use its work area
+    if sys.platform.startswith("win"):
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            user32 = ctypes.windll.user32
+            MONITOR_DEFAULTTONEAREST = 2
+            hwnd = widget.winfo_id()
+            monitor = user32.MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST)
+
+            class RECT(ctypes.Structure):
+                _fields_ = [
+                    ("left", wintypes.LONG),
+                    ("top", wintypes.LONG),
+                    ("right", wintypes.LONG),
+                    ("bottom", wintypes.LONG),
+                ]
+
+            class MONITORINFO(ctypes.Structure):
+                _fields_ = [
+                    ("cbSize", wintypes.DWORD),
+                    ("rcMonitor", RECT),
+                    ("rcWork", RECT),
+                    ("dwFlags", wintypes.DWORD),
+                ]
+
+            def _detect_monitor_scale(monitor_handle):
+                """Return the Windows scaling factor for the given monitor as a float."""
+                try:
+                    shcore = ctypes.windll.shcore
+                except Exception:
+                    shcore = None
+
+                scale_value = None
+
+                if shcore is not None:
+                    try:
+                        # GetScaleFactorForMonitor is available since Windows 8.1.
+                        get_scale = getattr(shcore, "GetScaleFactorForMonitor", None)
+                        if get_scale is not None:
+                            scale = ctypes.c_uint()
+                            # Returns 0 on success and the scale in percent (e.g. 150).
+                            if get_scale(monitor_handle, ctypes.byref(scale)) == 0:
+                                scale_value = max(1, int(scale.value)) / 100.0
+                    except Exception:
+                        scale_value = None
+
+                if scale_value:
+                    return scale_value
+
+                try:
+                    # Fallback to system DPI if per-monitor API is unavailable.
+                    get_dpi_for_system = getattr(ctypes.windll.user32, "GetDpiForSystem", None)
+                    if get_dpi_for_system is not None:
+                        dpi = int(get_dpi_for_system())
+                        if dpi > 0:
+                            return dpi / 96.0
+                except Exception:
+                    pass
+
+                try:
+                    # Tk exposes its own scaling factor (pixels per point).
+                    tk_scaling = float(widget.tk.call("tk", "scaling"))
+                    if tk_scaling > 0:
+                        # Convert pixels-per-point to the Windows notion of scale.
+                        return tk_scaling / (96.0 / 72.0)
+                except Exception:
+                    pass
+
+                return 1.0
+
+            info = MONITORINFO()
+            info.cbSize = ctypes.sizeof(MONITORINFO)
+            if monitor and user32.GetMonitorInfoW(monitor, ctypes.byref(info)):
+                work = info.rcWork
+                scale_factor = _detect_monitor_scale(monitor)
+                if not scale_factor or scale_factor <= 0:
+                    scale_factor = 1.0
+
+                left = int(round(work.left / scale_factor))
+                top = int(round(work.top / scale_factor))
+                right = int(round(work.right / scale_factor))
+                bottom = int(round(work.bottom / scale_factor))
+        except Exception:
+            pass
+
+    if right <= left:
+        right = left + max(1, int(widget.winfo_screenwidth()))
+    if bottom <= top:
+        bottom = top + max(1, int(widget.winfo_screenheight()))
+
+    return left, top, right, bottom
+
+
+def _get_display_area(widget):
+    """Return (width, height) for the usable display that hosts the widget."""
+    left, top, right, bottom = _get_display_bounds(widget)
+    return max(1, right - left), max(1, bottom - top)
+
+
+def _get_widget_root_geometry(widget, fallback):
+    """Return (x, y, width, height) for the widget or fall back to defaults."""
+    if widget is None:
+        return fallback
+
+    _safe_update_idletasks(widget)
+    try:
+        width = int(widget.winfo_width())
+        height = int(widget.winfo_height())
+        x = int(widget.winfo_rootx())
+        y = int(widget.winfo_rooty())
+        if width <= 1 or height <= 1:
+            raise ValueError
+        return x, y, width, height
+    except Exception:
+        return fallback
+
+
+def _compute_child_geometry(
+    reference_widget,
+    desired_width,
+    desired_height,
+    min_width=320,
+    min_height=240,
+    padding_x=0,
+    padding_y=0,
+):
+    """Compute a geometry tuple constrained to the monitor of the reference widget."""
+    if reference_widget is None:
+        raise ValueError("reference_widget cannot be None")
+
+    min_width = max(1, int(min_width))
+    min_height = max(1, int(min_height))
+
+    padding_x = max(0, int(padding_x))
+    padding_y = max(0, int(padding_y))
+
+    left, top, right, bottom = _get_display_bounds(reference_widget)
+    area_width = max(1, right - left)
+    area_height = max(1, bottom - top)
+
+    usable_width = min(area_width, max(min_width, area_width - padding_x))
+    usable_height = min(area_height, max(min_height, area_height - padding_y))
+
+    desired_width = int(desired_width)
+    desired_height = int(desired_height)
+
+    width = int(min(usable_width, max(min_width, desired_width)))
+    height = int(min(usable_height, max(min_height, desired_height)))
+
+    fallback = (left, top, area_width, area_height)
+    ref_x, ref_y, ref_width, ref_height = _get_widget_root_geometry(reference_widget, fallback)
+    if ref_width <= 1 or ref_height <= 1:
+        ref_width, ref_height = width, height
+
+    x = ref_x + (ref_width - width) // 2
+    y = ref_y + (ref_height - height) // 2
+
+    x = max(left, min(x, right - width))
+    y = max(top, min(y, bottom - height))
+
+    return width, height, x, y, area_width, area_height
+
+
+def _enforce_window_display_bounds(
+    window,
+    reference_widget,
+    min_width=200,
+    min_height=200,
+    padding_x=0,
+    padding_y=0,
+):
+    """Ensure the window stays fully visible within the reference widget's monitor."""
+    if window is None or reference_widget is None:
+        return
+    try:
+        if not window.winfo_exists():
+            return
+    except Exception:
+        return
+
+    _safe_update_idletasks(window)
+    current_width = max(min_width, int(window.winfo_width()))
+    current_height = max(min_height, int(window.winfo_height()))
+
+    width, height, x, y, area_width, area_height = _compute_child_geometry(
+        reference_widget,
+        current_width,
+        current_height,
+        min_width,
+        min_height,
+        padding_x,
+        padding_y,
+    )
+
+    geometry_changed = (
+        int(window.winfo_width()) != width
+        or int(window.winfo_height()) != height
+        or int(window.winfo_rootx()) != x
+        or int(window.winfo_rooty()) != y
+    )
+
+    if geometry_changed:
+        window.geometry(f"{width}x{height}+{x}+{y}")
+
+    usable_width = min(area_width, max(min_width, area_width - max(0, int(padding_x))))
+    usable_height = min(area_height, max(min_height, area_height - max(0, int(padding_y))))
+
+    window.minsize(int(min(min_width, usable_width)), int(min(min_height, usable_height)))
+    window.maxsize(int(usable_width), int(usable_height))
+
+    return area_width, area_height
+
 def get_assets_dir_path():
     """Zwraca ścieżkę do katalogu assets."""
     if getattr(sys, 'frozen', False):
@@ -184,9 +433,12 @@ class MultiAPICorrector(ctk.CTk):
         self.api_keys = {}
         self.models = {}
         self.settings = {}
+        self.ai_settings = {}
         self.api_threads = {}
         self.api_results = {}
         self.original_text = ""
+        self.original_text_window = None
+        self.original_text_textbox = None
         self.processing = False
         self.current_session_id = 0
         self.cancel_flags = {}  # Flagi anulowania dla każdego API
@@ -284,22 +536,216 @@ class MultiAPICorrector(ctk.CTk):
         # Sprawdź czy zmienił się monitor/rozdzielczość
         current_screen_width, current_screen_height = self.get_screen_dimensions()
         
-        if (current_screen_width != self.last_screen_width or 
+        if (current_screen_width != self.last_screen_width or
             current_screen_height != self.last_screen_height):
-            
+
             logging.info(f"Monitor change detected: {current_screen_width}x{current_screen_height}")
-            
+
             # Przeliczy skalowanie
             new_scale = self.calculate_scale_factor(current_screen_width, current_screen_height)
-            
+
             if abs(new_scale - self.scale_factor) > 0.1:  # Jeśli znacząca zmiana
                 self.scale_factor = new_scale
                 self.rescale_ui_components()
-            
+
             # Zaktualizuj zapisane wymiary
             self.last_screen_width = current_screen_width
             self.last_screen_height = current_screen_height
-    
+
+    def _set_original_text(self, text: str) -> None:
+        """Aktualizuje przechowywany oryginalny tekst i widok podglądu."""
+        self.original_text = text or ""
+        self._update_original_text_view()
+        if hasattr(self, "original_text_button"):
+            try:
+                if self.original_text.strip():
+                    self.original_text_button.configure(state="normal")
+                else:
+                    self.original_text_button.configure(state="disabled")
+            except Exception:
+                pass
+
+    def _update_original_text_view(self) -> None:
+        """Odświeża zawartość okna z oryginalnym tekstem (jeśli jest otwarte)."""
+        if not self.original_text_window or not self.original_text_textbox:
+            return
+        try:
+            if not self.original_text_window.winfo_exists() or not self.original_text_textbox.winfo_exists():
+                return
+        except Exception:
+            return
+
+        textbox = self.original_text_textbox
+        try:
+            prev_state = textbox.cget("state")
+        except Exception:
+            prev_state = "normal"
+        if prev_state != "normal":
+            textbox.configure(state="normal")
+        textbox.delete("1.0", "end")
+        textbox.insert("1.0", self.original_text)
+        textbox.yview_moveto(0.0)
+        if prev_state != "normal":
+            textbox.configure(state=prev_state)
+
+    def _on_original_window_destroy(self, event) -> None:
+        """Czyści referencje po zamknięciu okna podglądu oryginalnego tekstu."""
+        if event.widget is self.original_text_window:
+            self.original_text_window = None
+            self.original_text_textbox = None
+
+    def _close_original_text_window(self) -> None:
+        """Zamyka okno z oryginalnym tekstem."""
+        if self.original_text_window and self.original_text_window.winfo_exists():
+            try:
+                self.original_text_window.destroy()
+            except Exception:
+                pass
+        self.original_text_window = None
+        self.original_text_textbox = None
+
+    def _copy_original_text_to_clipboard(self) -> None:
+        """Kopiuje oryginalny tekst do schowka użytkownika."""
+        if not self.original_text.strip():
+            messagebox.showinfo(
+                "Brak tekstu",
+                "Brak oryginalnego tekstu do skopiowania.",
+                parent=self
+            )
+            return
+        try:
+            self.clipboard_clear()
+            self.clipboard_append(self.original_text)
+            self.update()
+            self.update_status("📋 Skopiowano oryginalny tekst do schowka")
+        except Exception as exc:
+            logging.error(f"Nie można skopiować oryginalnego tekstu: {exc}")
+            messagebox.showerror(
+                "Błąd",
+                f"Nie można skopiować oryginalnego tekstu: {exc}",
+                parent=self
+            )
+
+    def show_original_text_window(self) -> None:
+        """Pokazuje okno z pełnym oryginalnym tekstem."""
+        if not self.original_text.strip():
+            messagebox.showinfo(
+                "Brak tekstu",
+                "Brak oryginalnego tekstu do wyświetlenia.",
+                parent=self
+            )
+            return
+
+        min_width = 360
+        min_height = 280
+
+        area_width, area_height = _get_display_area(self)
+        padding_x = min(max(0, int(area_width * 0.08)), max(0, area_width - min_width))
+        padding_y = min(max(0, int(area_height * 0.12)), max(0, area_height - min_height))
+
+        max_width = min(area_width, max(min_width, area_width - padding_x))
+        max_height = min(area_height, max(min_height, area_height - padding_y))
+
+        desired_width = min(max_width, max(min_width, int(area_width * 0.55)))
+        desired_height = min(max_height, max(min_height, int(area_height * 0.7)))
+
+        if self.original_text_window and self.original_text_window.winfo_exists():
+            try:
+                self.original_text_window.deiconify()
+                self.original_text_window.lift()
+                self.original_text_window.focus_force()
+                _enforce_window_display_bounds(
+                    self.original_text_window,
+                    self,
+                    min_width,
+                    min_height,
+                    padding_x,
+                    padding_y,
+                )
+            except Exception:
+                pass
+            self._update_original_text_view()
+            return
+
+        window = ctk.CTkToplevel(self)
+        window.title("Oryginalny tekst")
+        window.transient(self)
+        width, height, x, y, area_width, area_height = _compute_child_geometry(
+            self,
+            desired_width,
+            desired_height,
+            min_width,
+            min_height,
+            padding_x,
+            padding_y,
+        )
+        window.geometry(f"{width}x{height}+{x}+{y}")
+        usable_width = min(area_width, max(min_width, area_width - padding_x))
+        usable_height = min(area_height, max(min_height, area_height - padding_y))
+        window.minsize(int(min(min_width, usable_width)), int(min(min_height, usable_height)))
+        window.maxsize(int(usable_width), int(usable_height))
+
+        window.protocol("WM_DELETE_WINDOW", self._close_original_text_window)
+        window.bind("<Destroy>", self._on_original_window_destroy)
+
+        text_container = ctk.CTkFrame(window, fg_color="transparent")
+        text_container.pack(fill="both", expand=True, padx=15, pady=(15, 10))
+
+        textbox = ctk.CTkTextbox(
+            text_container,
+            wrap="word",
+            font=ctk.CTkFont(size=13),
+            fg_color="white",
+            text_color="black"
+        )
+        textbox.pack(side="left", fill="both", expand=True)
+        textbox.insert("1.0", self.original_text)
+        textbox.configure(state="disabled")
+        textbox.configure(cursor="xterm")
+
+        scrollbar = ctk.CTkScrollbar(
+            text_container,
+            orientation="vertical",
+            command=textbox.yview
+        )
+        scrollbar.pack(side="right", fill="y", padx=(5, 0))
+        textbox.configure(yscrollcommand=scrollbar.set)
+
+        button_frame = ctk.CTkFrame(window, fg_color="transparent")
+        button_frame.pack(fill="x", padx=15, pady=(0, 15))
+
+        copy_button = ctk.CTkButton(
+            button_frame,
+            text="📋 Kopiuj",
+            command=self._copy_original_text_to_clipboard,
+            width=130,
+            height=36
+        )
+        copy_button.pack(side="right", padx=(10, 0))
+
+        close_button = ctk.CTkButton(
+            button_frame,
+            text="Zamknij",
+            command=self._close_original_text_window,
+            width=130,
+            height=36
+        )
+        close_button.pack(side="right")
+
+        self.original_text_window = window
+        self.original_text_textbox = textbox
+        window.after(
+            150,
+            lambda: _enforce_window_display_bounds(
+                window,
+                self,
+                min_width,
+                min_height,
+                padding_x,
+                padding_y,
+            ),
+        )
+
     def rescale_ui_components(self):
         """Przeskalowuje komponenty UI na podstawie scale_factor."""
         # Przeskaluj czcionki
@@ -540,7 +986,17 @@ class MultiAPICorrector(ctk.CTk):
             height=40
         )
         self.settings_button.pack(side="left", padx=5)
-        
+
+        self.original_text_button = ctk.CTkButton(
+            control_frame,
+            text="📄 Oryginalny tekst",
+            command=self.show_original_text_window,
+            width=160,
+            height=40,
+            state="disabled"
+        )
+        self.original_text_button.pack(side="left", padx=5)
+
         self.paste_button = ctk.CTkButton(
             control_frame,
             text="📋 Wklej tekst",
@@ -589,7 +1045,13 @@ class MultiAPICorrector(ctk.CTk):
     def load_config(self):
         """Ładuje konfigurację API."""
         try:
-            self.api_keys, self.models, self.settings, _ = config_manager.load_config()
+            (
+                self.api_keys,
+                self.models,
+                self.settings,
+                self.ai_settings,
+                _,
+            ) = config_manager.load_config()
             
             # Sprawdź które API są skonfigurowane
             configured = []
@@ -650,7 +1112,7 @@ class MultiAPICorrector(ctk.CTk):
             
             # SUCCESS: Mamy tekst! Pokaż GUI i rozpocznij przetwarzanie
             logging.info(f"✅ Clipboard copy SUCCESS - {len(clipboard_text)} znaków")
-            self.original_text = clipboard_text
+            self._set_original_text(clipboard_text)
             
             # DOPIERO TERAZ pokaż GUI - po udanym kopiowaniu!
             self._show_gui_and_process(clipboard_text)
@@ -707,7 +1169,7 @@ class MultiAPICorrector(ctk.CTk):
         self.api_cancel_events = {}
         self.current_session_id += 1
         self._stream_started_indices.clear()
-        self.original_text = text
+        self._set_original_text(text)
 
         self.update_status(status_message)
         self.session_label.configure(text=f"📝 Sesja: {self.current_session_id}")
@@ -783,9 +1245,19 @@ class MultiAPICorrector(ctk.CTk):
         value = str(self.settings.get("HighlightDiffs", "0")).strip().lower()
         return value in {"1", "true", "yes", "on"}
 
+    def _get_textbox_state(self, widget):
+        """Zwraca aktualny stan CTkTextbox bez rzucania ValueError."""
+        try:
+            return widget.cget("state")
+        except (ValueError, AttributeError):
+            try:
+                return widget._textbox.cget("state")
+            except Exception:
+                return "normal"
+
     def _highlight_diff(self, idx: int, original: str, corrected: str) -> None:
         widget = self.api_text_widgets[idx]
-        prev_state = widget.cget("state")
+        prev_state = self._get_textbox_state(widget)
         if prev_state != "normal":
             widget.configure(state="normal")
         try:
@@ -819,7 +1291,7 @@ class MultiAPICorrector(ctk.CTk):
         if not hasattr(self, "api_text_widgets"):
             return
         for idx, widget in enumerate(self.api_text_widgets):
-            prev_state = widget.cget("state")
+            prev_state = self._get_textbox_state(widget)
             widget.configure(state="normal")
             text = widget.get("1.0", "end-1c")
             widget.tag_remove("diff_highlight", "1.0", "end")
@@ -828,7 +1300,8 @@ class MultiAPICorrector(ctk.CTk):
                     self._highlight_diff(idx, self.original_text or "", text)
                 except Exception:
                     logging.debug("Highlight diff failed", exc_info=True)
-            widget.configure(state=prev_state)
+            if prev_state != "normal":
+                widget.configure(state=prev_state)
 
     def _start_api_threads(self, text):
         """Uruchamia API threads - UI już przygotowane!"""
@@ -1343,7 +1816,7 @@ class MultiAPICorrector(ctk.CTk):
                 return
             
             logging.info(f"Przetwarzanie tekstu ze schowka: {len(clipboard_text)} znaków")
-            self.original_text = clipboard_text
+            self._set_original_text(clipboard_text)
             # Przygotuj stany loaderów zanim okno zostanie ponownie pokazane, aby uniknąć migotania.
             self._show_gui_and_process(clipboard_text)
             
@@ -1384,37 +1857,152 @@ class SettingsWindow(ctk.CTkToplevel):
             logging.debug(f"Błąd ustawiania ikony okna Settings: {e}")
         
         self.title("Ustawienia API")
-        
-        parent.update_idletasks()
-        parent_width = max(parent.winfo_width(), 900)
-        parent_height = max(parent.winfo_height(), 700)
+
+        self._reference_widget = parent if parent is not None else self
+        if parent is not None:
+            _safe_update_idletasks(parent)
+
+        area_width, area_height = _get_display_area(self._reference_widget)
         scale = getattr(parent, "scale_factor", 1.0) or 1.0
-        settings_width = max(int(520 * scale), int(parent_width * 0.45))
-        settings_height = max(int(520 * scale), int(parent_height * 0.75))
-        
-        # Wyśrodkuj względem rodzica
-        parent_x = parent.winfo_x()
-        parent_y = parent.winfo_y()
-        x = parent_x + (parent_width - settings_width) // 2
-        y = parent_y + (parent_height - settings_height) // 2
-        
-        self.geometry(f"{settings_width}x{settings_height}+{x}+{y}")
-        self.minsize(350, 450)  # Minimalny rozmiar
-        self.resizable(True, True)  # Umożliw zmianę rozmiaru
-        
+
+        padding_x = min(max(0, int(area_width * 0.08)), max(0, area_width - 360))
+        padding_y = min(max(0, int(area_height * 0.12)), max(0, area_height - 420))
+        self._geometry_padding = (padding_x, padding_y)
+
+        base_width_candidate = int(max(380, min(640, 420 * scale)))
+        base_height_candidate = int(max(460, min(720, 520 * scale)))
+
+        if area_width > 0:
+            max_width_cap = min(area_width, max(360, area_width - padding_x))
+        else:
+            max_width_cap = base_width_candidate
+        if area_height > 0:
+            max_height_cap = min(area_height, max(420, area_height - padding_y))
+        else:
+            max_height_cap = base_height_candidate
+
+        if max_width_cap >= 320:
+            self._base_min_width = max(320, min(base_width_candidate, max_width_cap))
+        else:
+            self._base_min_width = max_width_cap if max_width_cap > 0 else base_width_candidate
+
+        if max_height_cap >= 400:
+            self._base_min_height = max(400, min(base_height_candidate, max_height_cap))
+        else:
+            self._base_min_height = max_height_cap if max_height_cap > 0 else base_height_candidate
+
+        self._max_width_cap = max_width_cap if max_width_cap > 0 else self._base_min_width
+        self._max_height_cap = max_height_cap if max_height_cap > 0 else self._base_min_height
+
+        if area_width > 0:
+            desired_width = max(self._base_min_width, int(area_width * 0.62))
+        else:
+            desired_width = self._base_min_width
+        if area_height > 0:
+            desired_height = max(self._base_min_height, int(area_height * 0.75))
+        else:
+            desired_height = self._base_min_height
+
+        desired_width = min(self._max_width_cap, desired_width)
+        desired_height = min(self._max_height_cap, desired_height)
+
+        self._current_width = desired_width
+        self._current_height = desired_height
+        self._display_area = (0, 0)
+        self._min_width = self._base_min_width
+        self._min_height = self._base_min_height
+
+        self._apply_geometry(desired_width, desired_height)
+        enforced_area = _enforce_window_display_bounds(
+            self,
+            self._reference_widget,
+            self._min_width,
+            self._min_height,
+            padding_x,
+            padding_y,
+        )
+        if enforced_area:
+            self._display_area = enforced_area
+        self.resizable(True, True)
+
         self.transient(parent)
         self.setup_ui()
         self.load_settings()
-    
+        self._resize_to_fit_content()
+
+    def _apply_geometry(self, width, height, min_width=None, min_height=None):
+        """Ustawia geometrię okna w granicach ekranu i zapamiętuje bieżący rozmiar."""
+        effective_min_width = int(min_width) if min_width is not None else self._base_min_width
+        effective_min_height = int(min_height) if min_height is not None else self._base_min_height
+
+        padding_x, padding_y = getattr(self, "_geometry_padding", (0, 0))
+        width, height, x, y, area_width, area_height = _compute_child_geometry(
+            self._reference_widget,
+            width,
+            height,
+            effective_min_width,
+            effective_min_height,
+            padding_x,
+            padding_y,
+        )
+
+        self.geometry(f"{width}x{height}+{x}+{y}")
+        self._current_width = width
+        self._current_height = height
+        self._display_area = (area_width, area_height)
+        self._min_width = effective_min_width
+        self._min_height = effective_min_height
+        usable_width = min(area_width, max(effective_min_width, area_width - max(0, int(padding_x))))
+        usable_height = min(area_height, max(effective_min_height, area_height - max(0, int(padding_y))))
+        self._usable_width = usable_width
+        self._usable_height = usable_height
+        self.minsize(int(min(effective_min_width, usable_width)), int(min(effective_min_height, usable_height)))
+        self.maxsize(int(usable_width), int(usable_height))
+
+    def _resize_to_fit_content(self):
+        """Rozszerza okno tak, aby cała zawartość mieściła się bez przewijania, jeśli pozwala na to ekran."""
+        if not hasattr(self, "main_frame"):
+            return
+
+        try:
+            content_widget = self.main_frame._scrollable_frame
+        except AttributeError:
+            content_widget = self.main_frame
+
+        self.update_idletasks()
+        content_width = content_widget.winfo_reqwidth()
+        content_height = content_widget.winfo_reqheight()
+
+        padding_x, padding_y = getattr(self, "_geometry_padding", (0, 0))
+        content_padding_x = max(40, padding_x // 2)
+        content_padding_y = max(60, padding_y // 2)
+
+        area_width, area_height = self._display_area if any(self._display_area) else _get_display_area(self._reference_widget)
+        usable_width = getattr(self, "_usable_width", None)
+        usable_height = getattr(self, "_usable_height", None)
+
+        if not usable_width:
+            usable_width = min(area_width, max(self._min_width, area_width - max(0, int(padding_x))))
+        if not usable_height:
+            usable_height = min(area_height, max(self._min_height, area_height - max(0, int(padding_y))))
+
+        effective_min_width = max(self._base_min_width, content_width + content_padding_x)
+        effective_min_height = max(self._base_min_height, content_height + content_padding_y)
+
+        desired_width = min(usable_width, max(self._current_width, effective_min_width))
+        desired_height = min(usable_height, max(self._current_height, effective_min_height))
+
+        self._apply_geometry(desired_width, desired_height, effective_min_width, effective_min_height)
+
     def setup_ui(self):
         """Konfiguruje interfejs ustawień."""
-        main_frame = ctk.CTkScrollableFrame(self)
-        main_frame.pack(fill="both", expand=True, padx=20, pady=20)
+        self.main_frame = ctk.CTkScrollableFrame(self)
+        self.main_frame.pack(fill="both", expand=True, padx=20, pady=20)
         
         # Skalowana czcionka tytułu
         title_font_size = max(16, int(18 * self.parent.scale_factor))
         title_label = ctk.CTkLabel(
-            main_frame, 
+            self.main_frame,
             text="Konfiguracja kluczy API",
             font=ctk.CTkFont(size=title_font_size, weight="bold")
         )
@@ -1435,7 +2023,7 @@ class SettingsWindow(ctk.CTkToplevel):
         ]
         
         for api_key, label, placeholder, color in apis:
-            frame = ctk.CTkFrame(main_frame, fg_color=color, corner_radius=10)
+            frame = ctk.CTkFrame(self.main_frame, fg_color=color, corner_radius=10)
             frame.pack(fill="x", pady=10)
             
             # Skalowana czcionka dla label
@@ -1513,7 +2101,7 @@ class SettingsWindow(ctk.CTkToplevel):
             model_input.pack(fill="x", pady=(5, 0))
             self.model_inputs[api_key] = model_input
 
-        general_frame = ctk.CTkFrame(main_frame, fg_color="#1f2937", corner_radius=10)
+        general_frame = ctk.CTkFrame(self.main_frame, fg_color="#1f2937", corner_radius=10)
         general_frame.pack(fill="x", pady=(10, 10))
 
         ctk.CTkLabel(
@@ -1533,7 +2121,7 @@ class SettingsWindow(ctk.CTkToplevel):
         self.highlight_checkbox.pack(anchor="w", padx=15, pady=(0, 12))
 
         # AI Settings section for GPT-5 models
-        ai_settings_frame = ctk.CTkFrame(main_frame, fg_color="#6366f1", corner_radius=10)
+        ai_settings_frame = ctk.CTkFrame(self.main_frame, fg_color="#6366f1", corner_radius=10)
         ai_settings_frame.pack(fill="x", pady=(20, 10))
         
         # Title for AI settings
@@ -1621,7 +2209,7 @@ class SettingsWindow(ctk.CTkToplevel):
         verbosity_help.pack(side="left")
         
         # Buttons
-        button_frame = ctk.CTkFrame(main_frame)
+        button_frame = ctk.CTkFrame(self.main_frame)
         button_frame.pack(fill="x", pady=20)
         
         save_button = ctk.CTkButton(
@@ -1660,23 +2248,21 @@ class SettingsWindow(ctk.CTkToplevel):
                 except:
                     self.model_inputs[api_key].insert(0, current_model)
         
-        # Load AI settings
-        try:
-            import configparser
-            from utils.config_manager import get_config_path, get_config_value
-            config = configparser.ConfigParser()
-            config.read(get_config_path())
-            
-            reasoning_effort = get_config_value(config, "AI_SETTINGS", "ReasoningEffort", "high")
-            verbosity = get_config_value(config, "AI_SETTINGS", "Verbosity", "medium")
-            
-            self.reasoning_combo.set(reasoning_effort)
-            self.verbosity_combo.set(verbosity)
-        except Exception as e:
-            logging.debug(f"Błąd ładowania ustawień AI: {e}")
-            # Set defaults
-            self.reasoning_combo.set("high")
-            self.verbosity_combo.set("medium")
+        ai_settings = getattr(self.parent, "ai_settings", {}) or {}
+        reasoning_effort = ai_settings.get("ReasoningEffort", "high") or "high"
+        verbosity = ai_settings.get("Verbosity", "medium") or "medium"
+
+        if reasoning_effort not in {"minimal", "low", "medium", "high"}:
+            logging.debug(
+                "Nieznana wartość ReasoningEffort w konfiguracji: %s", reasoning_effort
+            )
+            reasoning_effort = "high"
+        if verbosity not in {"low", "medium", "high"}:
+            logging.debug("Nieznana wartość Verbosity w konfiguracji: %s", verbosity)
+            verbosity = "medium"
+
+        self.reasoning_combo.set(reasoning_effort)
+        self.verbosity_combo.set(verbosity)
 
         highlight_enabled = str(self.parent.settings.get("HighlightDiffs", "0")).strip().lower() in {"1", "true", "yes", "on"}
         self.highlight_var.set(highlight_enabled)
@@ -1831,8 +2417,8 @@ class SettingsWindow(ctk.CTkToplevel):
                     self.parent.models[api_key] = get_default_model(api_key)
             
             ai_settings = {
-                "ReasoningEffort": self.reasoning_combo.get(),
-                "Verbosity": self.verbosity_combo.get()
+                "ReasoningEffort": (self.reasoning_combo.get() or "high").strip().lower(),
+                "Verbosity": (self.verbosity_combo.get() or "medium").strip().lower()
             }
 
             base_settings = dict(self.parent.settings)
@@ -1849,6 +2435,7 @@ class SettingsWindow(ctk.CTkToplevel):
             )
 
             self.parent.settings = settings_payload
+            self.parent.ai_settings = ai_settings
             self.parent.refresh_diff_highlights()
             self.parent.update_status("✅ Ustawienia zapisane")
             

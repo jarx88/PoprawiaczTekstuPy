@@ -101,9 +101,19 @@ def load_config():
         logger.info(f"Plik konfiguracyjny nie znaleziono w {config_path}. Próba utworzenia domyślnego.")
         new_config = create_default_config()
         if not os.path.exists(config_path):
-             logger.error(f"Krytyczny błąd: Plik konfiguracyjny nadal nie istnieje po próbie utworzenia: {config_path}")
-             logger.warning("Powracanie do pustej konfiguracji z powodu błędu tworzenia/ładowania configu.")
-             return DEFAULT_CONFIG['API_KEYS'], DEFAULT_CONFIG['MODELS'], DEFAULT_CONFIG['SETTINGS'], new_config
+            logger.error(
+                f"Krytyczny błąd: Plik konfiguracyjny nadal nie istnieje po próbie utworzenia: {config_path}"
+            )
+            logger.warning(
+                "Powracanie do pustej konfiguracji z powodu błędu tworzenia/ładowania configu."
+            )
+            return (
+                dict(DEFAULT_CONFIG['API_KEYS']),
+                dict(DEFAULT_CONFIG['MODELS']),
+                dict(DEFAULT_CONFIG['SETTINGS']),
+                dict(DEFAULT_CONFIG['AI_SETTINGS']),
+                new_config,
+            )
     
     config = configparser.ConfigParser()
     
@@ -111,9 +121,18 @@ def load_config():
         config.read(config_path)
         logger.info(f"Pomyślnie załadowano konfigurację z: {config_path}")
     except Exception as e:
-        logger.error(f"Błąd podczas ładowania istniejącego pliku konfiguracyjnego {config_path}: {e}", exc_info=True)
+        logger.error(
+            f"Błąd podczas ładowania istniejącego pliku konfiguracyjnego {config_path}: {e}",
+            exc_info=True,
+        )
         logger.warning("Powracanie do pustej konfiguracji z powodu błędu ładowania.")
-        return DEFAULT_CONFIG['API_KEYS'], DEFAULT_CONFIG['MODELS'], DEFAULT_CONFIG['SETTINGS'], new_config
+        return (
+            dict(DEFAULT_CONFIG['API_KEYS']),
+            dict(DEFAULT_CONFIG['MODELS']),
+            dict(DEFAULT_CONFIG['SETTINGS']),
+            dict(DEFAULT_CONFIG['AI_SETTINGS']),
+            new_config,
+        )
 
     
     # Pobierz klucze API i nazwy modeli (ignorując wielkość liter w sekcjach)
@@ -138,12 +157,31 @@ def load_config():
         "HighlightDiffs": get_config_value(config, 'SETTINGS', 'HighlightDiffs', '0')
     }
 
+    ai_settings_raw = {
+        "ReasoningEffort": get_config_value(
+            config,
+            'AI_SETTINGS',
+            'ReasoningEffort',
+            DEFAULT_CONFIG['AI_SETTINGS']['ReasoningEffort'],
+        ),
+        "Verbosity": get_config_value(
+            config,
+            'AI_SETTINGS',
+            'Verbosity',
+            DEFAULT_CONFIG['AI_SETTINGS']['Verbosity'],
+        ),
+    }
+    ai_settings = {
+        key: (value.strip().lower() if isinstance(value, str) else str(value).lower())
+        for key, value in ai_settings_raw.items()
+    }
+
     # Logowanie wczytanych kluczy i modeli (opcjonalnie, może być zbyt szczegółowe dla INFO)
     logger.debug("Wczytano klucze API z konfiguracji")
     logger.debug(f"Wczytane modele: {models}")
     logger.debug(f"Wczytane ustawienia: {settings}")
-    
-    return api_keys, models, settings, new_config
+
+    return api_keys, models, settings, ai_settings, new_config
 
 def save_config(api_keys, models, settings=None, ai_settings=None):
     """Zapisuje konfigurację do pliku."""
@@ -291,10 +329,11 @@ def is_admin():
 if __name__ == "__main__":
     print(f"Domyślna ścieżka config: {get_config_path()}")
     # Testowanie modułu
-    keys, current_models, current_settings, _ = load_config()
+    keys, current_models, current_settings, ai_settings, _ = load_config()
     print("Wczytane klucze API:", keys)
     print("Wczytane modele:", current_models)
     print("Wczytane ustawienia:", current_settings)
+    print("Wczytane ustawienia AI:", ai_settings)
     
     # Przykładowy zapis
     # keys["OpenAI"] = "test_key_123_openai" # Zmiana klucza
@@ -302,6 +341,6 @@ if __name__ == "__main__":
     # save_config(keys, current_models)
     # print("Zapisano zmodyfikowaną konfigurację.")
     
-    # keys, current_models, _ = load_config()
+    # keys, current_models, current_settings, ai_settings, _ = load_config()
     # print("Ponownie wczytane klucze API:", keys)
     # print("Ponownie wczytane modele:", current_models)
