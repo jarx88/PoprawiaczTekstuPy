@@ -97,14 +97,63 @@ def _get_display_bounds(widget):
                     ("dwFlags", wintypes.DWORD),
                 ]
 
+            def _detect_monitor_scale(monitor_handle):
+                """Return the Windows scaling factor for the given monitor as a float."""
+                try:
+                    shcore = ctypes.windll.shcore
+                except Exception:
+                    shcore = None
+
+                scale_value = None
+
+                if shcore is not None:
+                    try:
+                        # GetScaleFactorForMonitor is available since Windows 8.1.
+                        get_scale = getattr(shcore, "GetScaleFactorForMonitor", None)
+                        if get_scale is not None:
+                            scale = ctypes.c_uint()
+                            # Returns 0 on success and the scale in percent (e.g. 150).
+                            if get_scale(monitor_handle, ctypes.byref(scale)) == 0:
+                                scale_value = max(1, int(scale.value)) / 100.0
+                    except Exception:
+                        scale_value = None
+
+                if scale_value:
+                    return scale_value
+
+                try:
+                    # Fallback to system DPI if per-monitor API is unavailable.
+                    get_dpi_for_system = getattr(ctypes.windll.user32, "GetDpiForSystem", None)
+                    if get_dpi_for_system is not None:
+                        dpi = int(get_dpi_for_system())
+                        if dpi > 0:
+                            return dpi / 96.0
+                except Exception:
+                    pass
+
+                try:
+                    # Tk exposes its own scaling factor (pixels per point).
+                    tk_scaling = float(widget.tk.call("tk", "scaling"))
+                    if tk_scaling > 0:
+                        # Convert pixels-per-point to the Windows notion of scale.
+                        return tk_scaling / (96.0 / 72.0)
+                except Exception:
+                    pass
+
+                return 1.0
+
             info = MONITORINFO()
             info.cbSize = ctypes.sizeof(MONITORINFO)
             if monitor and user32.GetMonitorInfoW(monitor, ctypes.byref(info)):
                 work = info.rcWork
-                left = int(work.left)
-                top = int(work.top)
-                right = int(work.right)
-                bottom = int(work.bottom)
+                scale_factor = _detect_monitor_scale(monitor)
+                if not scale_factor or scale_factor <= 0:
+                    scale_factor = 1.0
+
+                left = int(round(work.left / scale_factor))
+                top = int(round(work.top / scale_factor))
+                right = int(round(work.right / scale_factor))
+                bottom = int(round(work.bottom / scale_factor))
         except Exception:
             pass
 
