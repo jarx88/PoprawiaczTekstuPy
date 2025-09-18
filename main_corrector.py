@@ -10,6 +10,7 @@ import logging
 from datetime import datetime
 import difflib
 import re
+import functools
 import customtkinter as ctk
 import pystray
 from PIL import Image, ImageTk
@@ -903,7 +904,7 @@ class MultiAPICorrector(ctk.CTk):
                 fg_color="transparent",
                 hover_color=color,
                 text_color="white",
-                command=lambda idx=i: self.show_action_menu(idx)
+                command=lambda idx=i: self.show_action_menu(idx, action_button)
             )
             action_button.pack(side="right", padx=2)
             self.api_action_buttons.append(action_button)
@@ -1761,8 +1762,8 @@ class MultiAPICorrector(ctk.CTk):
         self.progress_label.configure(text="")
         self.api_counter_label.configure(text="🤖 API: 0/4")
 
-    def show_action_menu(self, api_index):
-        """Pokazuje menu akcji dla danego panelu"""
+    def show_action_menu(self, api_index, button):
+        """Pokazuje menu dropdown z opcjami akcji"""
         try:
             self.log_message(f"🔍 DEBUG: Kliknięto ikonkę akcji dla panelu {api_index} ({self.api_names[api_index]})")
 
@@ -1781,23 +1782,25 @@ class MultiAPICorrector(ctk.CTk):
                 self.log_message(f"Brak tekstu w panelu {self.api_names[api_index]} do przetworzenia")
                 return
 
-            # Utwórz popup menu
+            # Stwórz menu dropdown
+            import tkinter as tk
             menu = tk.Menu(self, tearoff=0)
+
+            # Dodaj opcje do menu
             menu.add_command(
-                label="✨ Profesjonalizuj",
-                command=lambda: self.execute_action(api_index, "professional", "profesjonalizacji")
+                label="✨ Zmień na profesjonalny ton",
+                command=functools.partial(self.reprocess_single_panel, api_index, current_text, "professional", "profesjonalizacji")
             )
             menu.add_command(
-                label="🇺🇸 Na angielski",
-                command=lambda: self.execute_action(api_index, "translate_en", "tłumaczenia na angielski")
+                label="🇺🇸 Przetłumacz na angielski",
+                command=functools.partial(self.reprocess_single_panel, api_index, current_text, "translate_en", "tłumaczenia na angielski")
             )
             menu.add_command(
-                label="🇵🇱 Na polski",
-                command=lambda: self.execute_action(api_index, "translate_pl", "tłumaczenia na polski")
+                label="🇵🇱 Przetłumacz na polski",
+                command=functools.partial(self.reprocess_single_panel, api_index, current_text, "translate_pl", "tłumaczenia na polski")
             )
 
-            # Pokaż menu przy pozycji przycisku
-            button = self.api_action_buttons[api_index]
+            # Pokaż menu w pozycji przycisku
             x = button.winfo_rootx()
             y = button.winfo_rooty() + button.winfo_height()
             menu.post(x, y)
@@ -1805,19 +1808,6 @@ class MultiAPICorrector(ctk.CTk):
         except Exception as e:
             self.log_message(f"🔍 DEBUG: Błąd podczas pokazywania menu akcji: {e}")
             print(f"ERROR: show_action_menu: {e}")
-
-    def execute_action(self, api_index, action_type, action_name):
-        """Wykonuje wybraną akcję"""
-        try:
-            self.log_message(f"🔍 DEBUG: Wykonuję akcję {action_type} dla panelu {api_index}")
-
-            current_text = self.api_results[api_index].strip()
-            # Uruchom ponowne przetwarzanie dla danego panelu
-            self.reprocess_single_panel(api_index, current_text, action_type, action_name)
-
-        except Exception as e:
-            self.log_message(f"🔍 DEBUG: Błąd podczas wykonywania akcji: {e}")
-            print(f"ERROR: execute_action: {e}")
 
     def reprocess_single_panel(self, api_index, text, action_type, action_name):
         """Ponownie przetwarza tekst dla konkretnego panelu z niestandardowym promptem"""
