@@ -886,7 +886,7 @@ class MultiAPICorrector(ctk.CTk):
                 width=25,
                 height=25,
                 fg_color="transparent",
-                hover_color="transparent",
+                hover_color=color,
                 text_color="white",
                 command=lambda idx=i: self.cycle_action_for_panel(idx)
             )
