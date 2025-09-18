@@ -1219,11 +1219,32 @@ class MainWindow(QMainWindow):
             info_msg.show()
             return
 
-        # Prosty dialog tylko do wyświetlania
+        # Prosty dialog tylko do wyświetlania - rozmiar względem głównego okna
         dialog = QDialog(self)
         dialog.setWindowTitle("Oryginalny Tekst")
-        dialog.setMinimumSize(400, 300)
-        dialog.resize(550, 400)  # Rozsądny domyślny rozmiar
+
+        # Dynamiczne obliczenie rozmiaru względem głównego okna
+        main_size = self.size()
+        main_w, main_h = main_size.width(), main_size.height()
+
+        # Dialog nie większy niż 80% głównego okna
+        max_w = int(main_w * 0.8)
+        max_h = int(main_h * 0.8)
+
+        # Minimalne rozmiary - bardzo kompaktowe
+        min_w, min_h = 300, 200
+
+        # Domyślny rozmiar - 60% głównego okna
+        def_w = min(int(main_w * 0.6), max_w)
+        def_h = min(int(main_h * 0.6), max_h)
+
+        # Upewnij się, że nie jest mniejszy niż minimum
+        def_w = max(def_w, min_w)
+        def_h = max(def_h, min_h)
+
+        dialog.setMinimumSize(min_w, min_h)
+        dialog.setMaximumSize(max_w, max_h)
+        dialog.resize(def_w, def_h)
         layout = QVBoxLayout(dialog)
         text_edit = QTextEdit(self.s_original_text_content)
         text_edit.setReadOnly(True)

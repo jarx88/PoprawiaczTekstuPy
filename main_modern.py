@@ -29,9 +29,9 @@ class ModernTextCorrector(ctk.CTk):
     def __init__(self):
         super().__init__()
         
-        # Konfiguracja głównego okna
+        # Konfiguracja głównego okna - zmniejszone rozmiary dla lepszego dopasowania na HiDPI
         self.title("PoprawiaczTekstuPy - Modern")
-        self.geometry("800x600")
+        self.geometry("750x550")
         
         # Ustaw theme
         ctk.set_appearance_mode("system")  # Modes: system (default), light, dark
@@ -287,7 +287,7 @@ class SettingsWindow(ctk.CTkToplevel):
         self.parent = parent
         
         self.title("Ustawienia")
-        self.geometry("500x400")
+        self.geometry("450x380")  # Zmniejszone rozmiary dla lepszego dopasowania na HiDPI
         self.resizable(False, False)
         
         # Center window

@@ -475,18 +475,34 @@ class MultiAPICorrector(ctk.CTk):
         return screen_width, screen_height
     
     def calculate_optimal_size(self, screen_width, screen_height):
-        """Oblicza optymalny rozmiar okna dla danej rozdzielczości."""
-        # Procenty ekranu dla głównego okna
-        width_percent = 0.75  # 75% szerokości ekranu
-        height_percent = 0.80  # 80% wysokości ekranu
-        
+        """Oblicza optymalny rozmiar okna dla danej rozdzielczości - zoptymalizowane dla HiDPI."""
+        # Wykryj skalowanie DPI dla lepszego dopasowania
+        try:
+            # Użyj prostej heurystyki - jeśli rozdzielczość > 1600px prawdopodobnie HiDPI
+            is_hidpi = screen_width > 1600 or screen_height > 1000
+
+            if is_hidpi:
+                # Dla ekranów HiDPI użyj mniejszych proporcji
+                width_percent = 0.55   # 55% szerokości dla HiDPI
+                height_percent = 0.65  # 65% wysokości dla HiDPI
+                min_width, min_height = 800, 500
+            else:
+                # Standardowe rozmiary dla normalnych ekranów
+                width_percent = 0.70   # 70% szerokości
+                height_percent = 0.75  # 75% wysokości
+                min_width, min_height = 900, 600
+        except:
+            # Fallback - konserwatywne rozmiary
+            width_percent = 0.60
+            height_percent = 0.70
+            min_width, min_height = 800, 500
+
         optimal_width = int(screen_width * width_percent)
         optimal_height = int(screen_height * height_percent)
-        
-        # Minimalne i maksymalne rozmiary
-        min_width, min_height = 1000, 700
-        max_width, max_height = 2400, 1400
-        
+
+        # Maksymalne rozmiary - zmniejszone
+        max_width, max_height = 1800, 1200
+
         # Ogranicz rozmiary
         optimal_width = max(min_width, min(optimal_width, max_width))
         optimal_height = max(min_height, min(optimal_height, max_height))
@@ -519,7 +535,13 @@ class MultiAPICorrector(ctk.CTk):
         y = (screen_height - optimal_height) // 2
         
         self.geometry(f"{optimal_width}x{optimal_height}+{x}+{y}")
-        self.minsize(1000, 700)  # Minimalny rozmiar
+
+        # Dynamiczny minimalny rozmiar na podstawie wykrytego DPI
+        is_hidpi = screen_width > 1600 or screen_height > 1000
+        if is_hidpi:
+            self.minsize(700, 450)  # Zmniejszony minimalny rozmiar dla HiDPI
+        else:
+            self.minsize(800, 550)  # Standardowy minimalny rozmiar
         
         # Zapisz aktualne wymiary ekranu
         self.last_screen_width = screen_width
@@ -646,8 +668,9 @@ class MultiAPICorrector(ctk.CTk):
         max_width = min(area_width, max(min_width, area_width - padding_x))
         max_height = min(area_height, max(min_height, area_height - padding_y))
 
-        desired_width = min(max_width, max(min_width, int(area_width * 0.55)))
-        desired_height = min(max_height, max(min_height, int(area_height * 0.7)))
+        # Zmniejszone proporcje dla dialogu "Oryginalny tekst" - lepsze dla HiDPI
+        desired_width = min(max_width, max(min_width, int(area_width * 0.45)))  # 45% zamiast 55%
+        desired_height = min(max_height, max(min_height, int(area_height * 0.55))) # 55% zamiast 70%
 
         if self.original_text_window and self.original_text_window.winfo_exists():
             try:
@@ -1869,8 +1892,9 @@ class SettingsWindow(ctk.CTkToplevel):
         padding_y = min(max(0, int(area_height * 0.12)), max(0, area_height - 420))
         self._geometry_padding = (padding_x, padding_y)
 
-        base_width_candidate = int(max(380, min(640, 420 * scale)))
-        base_height_candidate = int(max(460, min(720, 520 * scale)))
+        # Zmniejszone rozmiary bazowe dla okna ustawień, szczególnie dla HiDPI
+        base_width_candidate = int(max(350, min(500, 380 * scale)))
+        base_height_candidate = int(max(380, min(580, 450 * scale)))
 
         if area_width > 0:
             max_width_cap = min(area_width, max(360, area_width - padding_x))

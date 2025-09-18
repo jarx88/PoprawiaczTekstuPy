@@ -23,30 +23,30 @@ class SettingsDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Ustawienia API i Modeli")
 
-        # Dynamiczne dostosowanie rozmiaru na podstawie DPI
-        screen = self.screen() if hasattr(self, 'screen') else parent.screen() if parent else None
-        if screen:
-            dpi_scale = screen.devicePixelRatio()
-            logical_dpi = screen.logicalDotsPerInch()
+        # Dynamiczne dostosowanie rozmiaru względem głównego okna
+        if parent:
+            parent_size = parent.size()
+            parent_w, parent_h = parent_size.width(), parent_size.height()
 
-            # Dla ekranów wysokiej rozdzielczości użyj mniejszych rozmiarów
-            if logical_dpi > 120 or dpi_scale > 1.5:  # HiDPI
-                min_w, min_h = 450, 320
-                max_w, max_h = 700, 550
-                def_w, def_h = 500, 400
-            elif logical_dpi > 96 or dpi_scale > 1.25:  # Średnie DPI
-                min_w, min_h = 480, 330
-                max_w, max_h = 750, 580
-                def_w, def_h = 520, 420
-            else:  # Standardowe DPI
-                min_w, min_h = 500, 350
-                max_w, max_h = 800, 600
-                def_w, def_h = 550, 450
+            # Ogranicz dialog do 85% rozmiaru głównego okna
+            max_w = int(parent_w * 0.85)
+            max_h = int(parent_h * 0.85)
+
+            # Minimalne rozmiary - kompaktowe dla wszystkich DPI
+            min_w, min_h = 400, 280
+
+            # Domyślny rozmiar - 70% głównego okna, ale nie większy niż rozsądne limity
+            def_w = min(int(parent_w * 0.7), 500)
+            def_h = min(int(parent_h * 0.7), 380)
+
+            # Upewnij się, że domyślny nie jest mniejszy niż minimalny
+            def_w = max(def_w, min_w)
+            def_h = max(def_h, min_h)
         else:
-            # Fallback dla przypadku gdy nie można wykryć ekranu
-            min_w, min_h = 500, 350
-            max_w, max_h = 800, 600
-            def_w, def_h = 550, 450
+            # Fallback gdy brak rodzica - bardzo małe rozmiary
+            min_w, min_h = 400, 280
+            max_w, max_h = 500, 380
+            def_w, def_h = 450, 330
 
         self.setMinimumSize(min_w, min_h)
         self.setMaximumSize(max_w, max_h)
