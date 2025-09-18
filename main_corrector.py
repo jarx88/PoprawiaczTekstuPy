@@ -790,9 +790,19 @@ class MultiAPICorrector(ctk.CTk):
         value = str(self.settings.get("HighlightDiffs", "0")).strip().lower()
         return value in {"1", "true", "yes", "on"}
 
+    def _get_textbox_state(self, widget):
+        """Zwraca aktualny stan CTkTextbox bez rzucania ValueError."""
+        try:
+            return widget.cget("state")
+        except (ValueError, AttributeError):
+            try:
+                return widget._textbox.cget("state")
+            except Exception:
+                return "normal"
+
     def _highlight_diff(self, idx: int, original: str, corrected: str) -> None:
         widget = self.api_text_widgets[idx]
-        prev_state = widget.cget("state")
+        prev_state = self._get_textbox_state(widget)
         if prev_state != "normal":
             widget.configure(state="normal")
         try:
@@ -826,7 +836,7 @@ class MultiAPICorrector(ctk.CTk):
         if not hasattr(self, "api_text_widgets"):
             return
         for idx, widget in enumerate(self.api_text_widgets):
-            prev_state = widget.cget("state")
+            prev_state = self._get_textbox_state(widget)
             widget.configure(state="normal")
             text = widget.get("1.0", "end-1c")
             widget.tag_remove("diff_highlight", "1.0", "end")
@@ -835,7 +845,8 @@ class MultiAPICorrector(ctk.CTk):
                     self._highlight_diff(idx, self.original_text or "", text)
                 except Exception:
                     logging.debug("Highlight diff failed", exc_info=True)
-            widget.configure(state=prev_state)
+            if prev_state != "normal":
+                widget.configure(state=prev_state)
 
     def _start_api_threads(self, text):
         """Uruchamia API threads - UI już przygotowane!"""
@@ -1398,14 +1409,25 @@ class SettingsWindow(ctk.CTkToplevel):
         scale = getattr(parent, "scale_factor", 1.0) or 1.0
         settings_width = max(int(520 * scale), int(parent_width * 0.45))
         settings_height = max(int(520 * scale), int(parent_height * 0.75))
-        
-        # Wyśrodkuj względem rodzica
+
+        screen_width = self.winfo_screenwidth()
+        screen_height = self.winfo_screenheight()
+        usable_width = max(400, screen_width - 80)
+        usable_height = max(400, screen_height - 160)
+        settings_width = min(settings_width, usable_width)
+        settings_height = min(settings_height, usable_height)
+
+        # Wyśrodkuj względem rodzica i upewnij się, że okno mieści się na ekranie
         parent_x = parent.winfo_x()
         parent_y = parent.winfo_y()
         x = parent_x + (parent_width - settings_width) // 2
         y = parent_y + (parent_height - settings_height) // 2
-        
-        self.geometry(f"{settings_width}x{settings_height}+{x}+{y}")
+        max_x = max(0, screen_width - settings_width)
+        max_y = max(0, screen_height - settings_height)
+        x = max(0, min(x, max_x))
+        y = max(0, min(y, max_y))
+
+        self.geometry(f"{settings_width}x{settings_height}+{int(x)}+{int(y)}")
         self.minsize(350, 450)  # Minimalny rozmiar
         self.resizable(True, True)  # Umożliw zmianę rozmiaru
         
