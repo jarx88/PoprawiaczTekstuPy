@@ -879,20 +879,6 @@ class MultiAPICorrector(ctk.CTk):
             api_label.pack(side="left")
             self.api_labels.append(api_label)
 
-            # Action button (simple icon button)
-            action_button = ctk.CTkButton(
-                header_content,
-                text="⚙️",
-                width=25,
-                height=25,
-                fg_color="transparent",
-                hover_color=color,
-                text_color="white",
-                command=lambda idx=i: self.cycle_action_for_panel(idx)
-            )
-            action_button.pack(side="right", padx=2)
-            self.api_action_buttons.append(action_button)
-
             # Cancel button for single API
             cancel_btn = ctk.CTkButton(
                 header_content,
@@ -907,6 +893,22 @@ class MultiAPICorrector(ctk.CTk):
             cancel_btn.pack(side="right", padx=5)
             cancel_btn.configure(state="disabled")
             self.api_cancel_buttons.append(cancel_btn)
+
+            # Action button (dropdown menu) - po lewej od X
+            action_button = ctk.CTkOptionMenu(
+                header_content,
+                values=["⚙️", "✨ Profesjonalizuj", "🇺🇸 Na angielski", "🇵🇱 Na polski"],
+                width=25,
+                height=25,
+                fg_color="transparent",
+                button_color="transparent",
+                button_hover_color=color,
+                text_color="white",
+                command=lambda value, idx=i: self.handle_action_dropdown(idx, value)
+            )
+            action_button.pack(side="right", padx=2)
+            action_button.set("⚙️")  # Default value
+            self.api_action_buttons.append(action_button)
             
             # Progress bar
             progress_bar = ctk.CTkProgressBar(
@@ -1761,12 +1763,19 @@ class MultiAPICorrector(ctk.CTk):
         self.progress_label.configure(text="")
         self.api_counter_label.configure(text="🤖 API: 0/4")
 
-    def cycle_action_for_panel(self, api_index):
-        """Cyklicznie przełącza akcje dla danego panelu API"""
+    def handle_action_dropdown(self, api_index, selected_value):
+        """Obsługuje wybór z dropdown menu akcji"""
         try:
             # Walidacja indeksu
             if not (0 <= api_index < len(self.api_action_buttons)):
                 self.log_message(f"Nieprawidłowy indeks API: {api_index}")
+                return
+
+            # Reset menu do domyślnej wartości
+            self.api_action_buttons[api_index].set("⚙️")
+
+            # Sprawdź czy to pierwsza opcja (która jest tylko etykietą)
+            if selected_value == "⚙️":
                 return
 
             # Sprawdź czy mamy wynik w tym panelu
@@ -1779,37 +1788,26 @@ class MultiAPICorrector(ctk.CTk):
                 self.log_message(f"Brak tekstu w panelu {self.api_names[api_index]} do przetworzenia")
                 return
 
-            # Inicjalizuj state dla cyklowania akcji jeśli nie istnieje
-            if not hasattr(self, 'api_action_states'):
-                self.api_action_states = [0] * len(self.api_names)  # 0, 1, 2 dla trzech akcji
-
-            # Cykluj do następnej akcji
-            self.api_action_states[api_index] = (self.api_action_states[api_index] + 1) % 3
-
-            # Określ akcję na podstawie stanu
-            if self.api_action_states[api_index] == 0:
+            # Określ akcję na podstawie wyboru
+            if selected_value == "✨ Profesjonalizuj":
                 action_type = "professional"
                 action_name = "profesjonalizacji"
-                icon = "✨"
-            elif self.api_action_states[api_index] == 1:
+            elif selected_value == "🇺🇸 Na angielski":
                 action_type = "translate_en"
                 action_name = "tłumaczenia na angielski"
-                icon = "🇺🇸"
-            else:  # state == 2
+            elif selected_value == "🇵🇱 Na polski":
                 action_type = "translate_pl"
                 action_name = "tłumaczenia na polski"
-                icon = "🇵🇱"
-
-            # Zaktualizuj ikonę przycisku
-            self.api_action_buttons[api_index].configure(text=icon)
+            else:
+                return
 
             # Uruchom ponowne przetwarzanie dla danego panelu
             self.reprocess_single_panel(api_index, current_text, action_type, action_name)
 
         except Exception as e:
-            error_context = f"api_index={api_index}"
-            self.log_message(f"Błąd podczas cyklowania akcji ({error_context}): {e}")
-            print(f"ERROR: cycle_action_for_panel ({error_context}): {e}")
+            error_context = f"api_index={api_index}, selected_value='{selected_value}'"
+            self.log_message(f"Błąd podczas obsługi dropdown akcji ({error_context}): {e}")
+            print(f"ERROR: handle_action_dropdown ({error_context}): {e}")
 
     def reprocess_single_panel(self, api_index, text, action_type, action_name):
         """Ponownie przetwarza tekst dla konkretnego panelu z niestandardowym promptem"""
