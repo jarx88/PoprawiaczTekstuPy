@@ -238,8 +238,8 @@ class MainWindow(QMainWindow):
         else:
             print(f"Nie znaleziono ikony: {icon_path}")
         
-        # Zwiększamy domyślną wysokość okna
-        self.setGeometry(100, 100, 1200, 850) # Zwiększona wysokość okna
+        # Ustawienie rozsądnego domyślnego rozmiaru okna
+        self.setGeometry(100, 100, 1000, 700) # Zmniejszony rozmiar dla lepszej proporcji
         self.setWindowTitle("Poprawiacz Tekstu Multi-API (PyQt)")
 
         self.setStyleSheet("""
@@ -1222,7 +1222,8 @@ class MainWindow(QMainWindow):
         # Prosty dialog tylko do wyświetlania
         dialog = QDialog(self)
         dialog.setWindowTitle("Oryginalny Tekst")
-        dialog.setMinimumSize(500, 350)
+        dialog.setMinimumSize(400, 300)
+        dialog.resize(550, 400)  # Rozsądny domyślny rozmiar
         layout = QVBoxLayout(dialog)
         text_edit = QTextEdit(self.s_original_text_content)
         text_edit.setReadOnly(True)
@@ -1677,8 +1678,8 @@ class MainWindow(QMainWindow):
         if screen:
             # logger.debug(f"Ekran: {screen.name()}, Dostępna geometria: {screen.availableGeometry()}") # Opcjonalne logowanie
             available = screen.availableGeometry()
-            width = int(available.width() * 0.6)
-            height = int(available.height() * 0.85)
+            width = int(available.width() * 0.7)  # Zwiększono z 0.6 na 0.7
+            height = int(available.height() * 0.75) # Zmniejszono z 0.85 na 0.75
             # Użyj singleShot, aby dać GUI chwilę na przetworzenie
             QTimer.singleShot(50, lambda: self._apply_adjusted_size(width, height, available)) # Zwiększono opóźnienie do 50ms
 

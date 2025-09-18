@@ -22,7 +22,9 @@ class SettingsDialog(QDialog):
     def __init__(self, current_api_keys, current_models, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Ustawienia API i Modeli")
-        self.setMinimumWidth(650) # Zwiększona szerokość dla lepszego układu
+        self.setMinimumSize(600, 400) # Rozsądny minimalny rozmiar
+        self.setMaximumSize(900, 700) # Maksymalny rozmiar dla wygody
+        self.resize(650, 500) # Domyślny rozmiar startowy
         self.setModal(True)
 
         self.api_keys = dict(current_api_keys) # Kopia, aby można było anulować
