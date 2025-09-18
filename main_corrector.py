@@ -903,11 +903,13 @@ class MultiAPICorrector(ctk.CTk):
                 height=25,
                 fg_color="transparent",
                 hover_color=color,
-                text_color="white",
-                command=lambda idx=i: self.show_action_menu(idx, action_button)
+                text_color="white"
             )
             action_button.pack(side="right", padx=2)
             self.api_action_buttons.append(action_button)
+
+            # Ustaw command po dodaniu do listy, używając indeksu
+            action_button.configure(command=functools.partial(self.show_action_menu, i))
             
             # Progress bar
             progress_bar = ctk.CTkProgressBar(
@@ -1762,7 +1764,7 @@ class MultiAPICorrector(ctk.CTk):
         self.progress_label.configure(text="")
         self.api_counter_label.configure(text="🤖 API: 0/4")
 
-    def show_action_menu(self, api_index, button):
+    def show_action_menu(self, api_index):
         """Pokazuje menu dropdown z opcjami akcji"""
         try:
             self.log_message(f"🔍 DEBUG: Kliknięto ikonkę akcji dla panelu {api_index} ({self.api_names[api_index]})")
@@ -1781,6 +1783,9 @@ class MultiAPICorrector(ctk.CTk):
             if not current_text:
                 self.log_message(f"Brak tekstu w panelu {self.api_names[api_index]} do przetworzenia")
                 return
+
+            # Pobierz przycisk z listy
+            button = self.api_action_buttons[api_index]
 
             # Stwórz menu dropdown
             import tkinter as tk
