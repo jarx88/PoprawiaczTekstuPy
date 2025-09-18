@@ -10,6 +10,11 @@ from gui.prompts import get_system_prompt
 from .base_client import DEFAULT_TIMEOUT, QUICK_TIMEOUT, CONNECTION_TIMEOUT, DEFAULT_RETRIES, APITimeoutError, DEEPSEEK_TIMEOUT
 
 _DEEPSEEK_CLIENT_CACHE = None
+_HTTP2_AVAILABLE = True
+try:
+    import h2  # type: ignore
+except Exception:
+    _HTTP2_AVAILABLE = False
 
 def _get_http_client():
     """Reużywalny httpx.Client z HTTP/2 i keep-alive dla DeepSeek."""
@@ -17,7 +22,7 @@ def _get_http_client():
     if _DEEPSEEK_CLIENT_CACHE is not None:
         return _DEEPSEEK_CLIENT_CACHE
     _DEEPSEEK_CLIENT_CACHE = httpx.Client(
-        http2=True,
+        http2=_HTTP2_AVAILABLE,
         timeout=httpx.Timeout(
             connect=CONNECTION_TIMEOUT,
             read=DEEPSEEK_TIMEOUT,

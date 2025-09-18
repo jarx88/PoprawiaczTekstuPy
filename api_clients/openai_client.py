@@ -48,6 +48,11 @@ def handle_api_error(e):
     return False
 
 _OPENAI_CLIENT_CACHE = {}
+_HTTP2_AVAILABLE = True
+try:
+    import h2  # type: ignore
+except Exception:
+    _HTTP2_AVAILABLE = False
 
 
 def _get_openai_client(api_key: str) -> openai.OpenAI:
@@ -57,7 +62,7 @@ def _get_openai_client(api_key: str) -> openai.OpenAI:
         return client
 
     http_client = httpx.Client(
-        http2=True,
+        http2=_HTTP2_AVAILABLE,
         timeout=httpx.Timeout(
             connect=CONNECTION_TIMEOUT,
             read=DEFAULT_TIMEOUT,
